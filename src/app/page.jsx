@@ -21,7 +21,7 @@ function AuthLanding() {
           <Link href="/login">Login</Link>
         </Button>
         <Button>
-          <Link href="/signup">Register</Link>
+          <Link href="/dashboard">Dashboard</Link>
         </Button>
       </div>
     </div>
