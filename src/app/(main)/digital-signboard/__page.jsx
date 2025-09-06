@@ -1,8 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { database } from "@/lib/firebase";
-import { ref, onValue, set, push } from "firebase/database";
 import {
   Card,
   CardContent,
@@ -64,62 +62,9 @@ function DigitalSignboardManagement() {
     reason: "",
   });
 
-  // Firebase Realtime Database states
-  const [display1, setDisplay1] = useState("");
-  const [display2, setDisplay2] = useState("");
-  const [displayForm, setDisplayForm] = useState({
-    display1Input: "",
-    display2Input: "",
-  });
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
-
   // Load all data on component mount
   useEffect(() => {
     loadAllData();
-
-    // Set up Firebase Realtime Database listeners
-    const display1Ref = ref(database, "Filling Station/signboard/display1");
-    const display2Ref = ref(database, "Filling Station/signboard/display2");
-
-    const unsubscribe1 = onValue(
-      display1Ref, 
-      (snapshot) => {
-        const data = snapshot.val();
-        console.log("Display1 data from Firebase:", data);
-        if (data !== null) {
-          setDisplay1(data);
-          setDisplayForm((prev) => ({ ...prev, display1Input: data }));
-        } else {
-          setDisplay1("");
-        }
-      },
-      (error) => {
-        console.error("Error fetching display1:", error);
-      }
-    );
-
-    const unsubscribe2 = onValue(
-      display2Ref,
-      (snapshot) => {
-        const data = snapshot.val();
-        console.log("Display2 data from Firebase:", data);
-        if (data !== null) {
-          setDisplay2(data);
-          setDisplayForm((prev) => ({ ...prev, display2Input: data }));
-        } else {
-          setDisplay2("");
-        }
-      },
-      (error) => {
-        console.error("Error fetching display2:", error);
-      }
-    );
-
-    // Cleanup listeners on unmount
-    return () => {
-      unsubscribe1();
-      unsubscribe2();
-    };
   }, []);
 
   const loadAllData = async () => {
@@ -142,11 +87,6 @@ function DigitalSignboardManagement() {
       const response = await getCurrentFuelPrices();
       if (response.success && response.data) {
         setCurrentPrices(response.data);
-
-        // Auto-sync MongoDB prices to Firebase if enabled
-        if (autoSyncEnabled) {
-          syncPricesToFirebase(response.data);
-        }
       }
     } catch (error) {
       console.error("Error loading current prices:", error);
@@ -213,29 +153,6 @@ function DigitalSignboardManagement() {
         // Reload all data to reflect changes
         await loadAllData();
 
-        // Auto-sync to Firebase if this is Petrol or Premium
-        if (
-          autoSyncEnabled &&
-          (priceForm.fuelType === "Petrol" || priceForm.fuelType === "Premium")
-        ) {
-          const updatedPrices = [...currentPrices];
-          const index = updatedPrices.findIndex(
-            (p) => p.fuelType === priceForm.fuelType
-          );
-          if (index >= 0) {
-            updatedPrices[index] = {
-              ...updatedPrices[index],
-              price: parseFloat(priceForm.newPrice),
-            };
-          } else {
-            updatedPrices.push({
-              fuelType: priceForm.fuelType,
-              price: parseFloat(priceForm.newPrice),
-            });
-          }
-          await syncPricesToFirebase(updatedPrices);
-        }
-
         // Reset form
         setPriceForm({
           fuelType: "",
@@ -258,124 +175,6 @@ function DigitalSignboardManagement() {
     await loadAllData();
     setRefreshing(false);
     toast.success("Data refreshed successfully");
-  };
-
-  // Sync MongoDB fuel prices to Firebase
-  const syncPricesToFirebase = async (prices) => {
-    try {
-      // Find Petrol and Premium prices
-      const petrolPrice = prices.find((p) => p.fuelType === "Petrol");
-      const premiumPrice = prices.find((p) => p.fuelType === "Premium");
-
-      if (petrolPrice) {
-        const petrolDisplay = `${petrolPrice.price.toFixed(2)}`;
-        const display1Ref = ref(database, "Filling Station/signboard/display1");
-        await set(display1Ref, petrolDisplay);
-      }
-
-      if (premiumPrice) {
-        const premiumDisplay = `${premiumPrice.price.toFixed(2)}`;
-        const display2Ref = ref(database, "Filling Station/signboard/display2");
-        await set(display2Ref, premiumDisplay);
-      }
-
-      // Log the sync to history
-      if (petrolPrice || premiumPrice) {
-        const historyRef = ref(database, "Filling Station/signboard/history");
-        await push(historyRef, {
-          type: "auto-sync",
-          display1: petrolPrice
-            ? `${petrolPrice.price.toFixed(2)}`
-            : null,
-          display2: premiumPrice
-            ? `${premiumPrice.price.toFixed(2)}`
-            : null,
-          timestamp: new Date().toISOString(),
-          source: "MongoDB",
-          updatedBy: "System Auto-Sync",
-        });
-      }
-    } catch (error) {
-      console.error("Error syncing prices to Firebase:", error);
-    }
-  };
-
-  // Manual sync function
-  const handleManualSync = async () => {
-    if (currentPrices.length > 0) {
-      await syncPricesToFirebase(currentPrices);
-      toast.success("Prices synced to Firebase successfully!");
-    } else {
-      toast.error("No prices available to sync");
-    }
-  };
-
-  // Firebase update functions
-  const updateDisplay1 = async () => {
-    try {
-      const display1Ref = ref(database, "Filling Station/signboard/display1");
-      await set(display1Ref, displayForm.display1Input);
-
-      // Log the update to history
-      const historyRef = ref(database, "Filling Station/signboard/history");
-      await push(historyRef, {
-        display: "display1",
-        value: displayForm.display1Input,
-        timestamp: new Date().toISOString(),
-        updatedBy: "Current User",
-      });
-
-      toast.success("Display 1 updated successfully!");
-    } catch (error) {
-      console.error("Error updating Display 1:", error);
-      toast.error("Failed to update Display 1");
-    }
-  };
-
-  const updateDisplay2 = async () => {
-    try {
-      const display2Ref = ref(database, "Filling Station/signboard/display2");
-      await set(display2Ref, displayForm.display2Input);
-
-      // Log the update to history
-      const historyRef = ref(database, "Filling Station/signboard/history");
-      await push(historyRef, {
-        display: "display2",
-        value: displayForm.display2Input,
-        timestamp: new Date().toISOString(),
-        updatedBy: "Current User",
-      });
-
-      toast.success("Display 2 updated successfully!");
-    } catch (error) {
-      console.error("Error updating Display 2:", error);
-      toast.error("Failed to update Display 2");
-    }
-  };
-
-  const updateBothDisplays = async () => {
-    try {
-      const display1Ref = ref(database, "Filling Station/signboard/display1");
-      const display2Ref = ref(database, "Filling Station/signboard/display2");
-
-      await set(display1Ref, displayForm.display1Input);
-      await set(display2Ref, displayForm.display2Input);
-
-      // Log the update to history
-      const historyRef = ref(database, "Filling Station/signboard/history");
-      await push(historyRef, {
-        display: "both",
-        display1: displayForm.display1Input,
-        display2: displayForm.display2Input,
-        timestamp: new Date().toISOString(),
-        updatedBy: "Current User",
-      });
-
-      toast.success("Both displays updated successfully!");
-    } catch (error) {
-      console.error("Error updating displays:", error);
-      toast.error("Failed to update displays");
-    }
   };
 
   const getPriceChange = (currentPrice, history) => {
@@ -598,49 +397,6 @@ function DigitalSignboardManagement() {
       {/* Update Prices Tab */}
       {activeTab === "update" && (
         <div className="space-y-6">
-          {/* Firebase Sync Section */}
-          <Card>
-            <CardHeader className="flex">
-              <CardTitle>Firebase Realtime Sync</CardTitle>
-              <CardDescription>
-                Sync MongoDB fuel prices to Firebase displays
-              </CardDescription>
-
-              <div className="flex">
-                <Button
-                  onClick={handleManualSync}
-                  className="bg-black text-white"
-                  size="lg"
-                >
-                  <RefreshCw className="h-5 w-5 mr-2" />
-                  Sync Prices
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Current Firebase Display Values */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 border rounded-lg bg-blue-50">
-                  <h4 className="font-medium text-sm mb-2">
-                    Display 1 (Petrol)
-                  </h4>
-                  <p className="text-lg font-semibold">
-                    {display1 || "No content set"}
-                  </p>
-                </div>
-                <div className="p-4 border rounded-lg bg-green-50">
-                  <h4 className="font-medium text-sm mb-2">
-                    Display 2 (Premium)
-                  </h4>
-                  <p className="text-lg font-semibold">
-                    {display2 || "No content set"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Update Prices Section */}
           <Card>
             <CardHeader>
               <CardTitle>Update Fuel Prices</CardTitle>

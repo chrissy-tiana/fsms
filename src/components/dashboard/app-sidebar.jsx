@@ -12,13 +12,10 @@ import { Button } from "../ui/button";
 import {
   LayoutDashboard,
   Users,
-  DollarSign,
-  Boxes,
   Clock,
   User,
   LogOut,
   ChartArea,
-  Clock1,
   ShoppingCart,
   Fuel,
 } from "lucide-react";
@@ -62,19 +59,9 @@ export function AppSidebar() {
           icon: <ShoppingCart className="h-5 w-5" />,
         },
         {
-          label: "Shift Management",
-          href: "/shift-management",
-          icon: <Clock1 className="h-5 w-5" />,
-        },
-        {
           label: "Employee Management",
           href: "/employee-management",
           icon: <Users className="h-5 w-5" />,
-        },
-        {
-          label: "Financial Management",
-          href: "/financial-management",
-          icon: <DollarSign className="h-5 w-5" />,
         },
       ],
     },

@@ -30,7 +30,6 @@ import {
 import {
   getDailySalesReport,
   getInventoryReport,
-  getEmployeePerformanceReport,
   getFinancialSummaryReport,
   getDashboardOverview,
 } from "@/services/reports";
@@ -38,7 +37,7 @@ import {
 function ReportsAndAnalytics() {
   const [activeTab, setActiveTab] = useState("overview");
   const [loading, setLoading] = useState(true);
-  
+
   // State for all backend data
   const [overviewMetrics, setOverviewMetrics] = useState({
     totalRevenue: 0,
@@ -46,10 +45,9 @@ function ReportsAndAnalytics() {
     totalTransactions: 0,
     avgTransaction: 0,
   });
-  
+
   const [salesData, setSalesData] = useState([]);
   const [inventoryData, setInventoryData] = useState([]);
-  const [staffPerformance, setStaffPerformance] = useState([]);
   const [pumpPerformance, setPumpPerformance] = useState([]);
   const [financialData, setFinancialData] = useState({
     totalRevenue: 0,
@@ -60,7 +58,7 @@ function ReportsAndAnalytics() {
     incomeByCategory: {},
     expensesByCategory: {},
   });
-  
+
   const [dateRange, setDateRange] = useState({
     startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
       .toISOString()
@@ -94,7 +92,6 @@ function ReportsAndAnalytics() {
         loadOverviewMetrics(),
         loadRecentSalesData(),
         loadInventoryData(),
-        loadStaffData(),
         loadFinancialData(),
       ]);
     } catch (error) {
@@ -111,34 +108,38 @@ function ReportsAndAnalytics() {
         dateRange.startDate,
         dateRange.endDate
       );
-      
+
       if (financialResponse.success && financialResponse.data) {
         const summary = financialResponse.data.summary;
-        
+
         // Calculate total transactions from recent sales
         const salesPromises = [];
         for (let i = 6; i >= 0; i--) {
           const date = new Date();
           date.setDate(date.getDate() - i);
           salesPromises.push(
-            getDailySalesReport(date.toISOString().split('T')[0])
+            getDailySalesReport(date.toISOString().split("T")[0])
           );
         }
-        
+
         const salesResults = await Promise.allSettled(salesPromises);
         let totalTransactions = 0;
-        
-        salesResults.forEach(result => {
-          if (result.status === 'fulfilled' && result.value.success) {
-            totalTransactions += result.value.data.summary.totalTransactions || 0;
+
+        salesResults.forEach((result) => {
+          if (result.status === "fulfilled" && result.value.success) {
+            totalTransactions +=
+              result.value.data.summary.totalTransactions || 0;
           }
         });
-        
+
         setOverviewMetrics({
           totalRevenue: summary.totalRevenue || 0,
           netProfit: summary.netIncome || 0,
           totalTransactions,
-          avgTransaction: totalTransactions > 0 ? (summary.totalRevenue || 0) / totalTransactions : 0,
+          avgTransaction:
+            totalTransactions > 0
+              ? (summary.totalRevenue || 0) / totalTransactions
+              : 0,
         });
       }
     } catch (error) {
@@ -159,20 +160,20 @@ function ReportsAndAnalytics() {
         const date = new Date();
         date.setDate(date.getDate() - i);
         salesPromises.push(
-          getDailySalesReport(date.toISOString().split('T')[0])
+          getDailySalesReport(date.toISOString().split("T")[0])
         );
       }
-      
+
       const salesResults = await Promise.allSettled(salesPromises);
       const processedSalesData = [];
       const pumpData = {};
-      
+
       salesResults.forEach((result, index) => {
         const date = new Date();
         date.setDate(date.getDate() - (6 - index));
-        const dateStr = date.toISOString().split('T')[0];
-        
-        if (result.status === 'fulfilled' && result.value.success) {
+        const dateStr = date.toISOString().split("T")[0];
+
+        if (result.status === "fulfilled" && result.value.success) {
           const data = result.value.data;
           processedSalesData.push({
             date: dateStr,
@@ -182,7 +183,7 @@ function ReportsAndAnalytics() {
             premium: data.salesByFuelType?.Premium || 0,
             transactions: data.summary.totalTransactions || 0,
           });
-          
+
           // Aggregate pump performance data
           if (data.salesByPump) {
             Object.entries(data.salesByPump).forEach(([pump, sales]) => {
@@ -205,20 +206,20 @@ function ReportsAndAnalytics() {
           });
         }
       });
-      
+
       setSalesData(processedSalesData);
-      
+
       // Convert pump data to array
       const pumpArray = Object.entries(pumpData).map(([pump, data]) => ({
         pumpNumber: pump,
         totalSales: data.totalSales,
         volume: data.totalSales / 6.5, // Estimate volume
         transactions: data.transactions,
-        avgPerTransaction: data.transactions > 0 ? data.totalSales / data.transactions : 0,
+        avgPerTransaction:
+          data.transactions > 0 ? data.totalSales / data.transactions : 0,
       }));
-      
+
       setPumpPerformance(pumpArray);
-      
     } catch (error) {
       console.error("Error loading sales data:", error);
       setSalesData([]);
@@ -230,9 +231,11 @@ function ReportsAndAnalytics() {
     try {
       const response = await getInventoryReport();
       if (response.success && response.data.inventory) {
-        const processedInventoryData = response.data.inventory.map(item => ({
+        const processedInventoryData = response.data.inventory.map((item) => ({
           fuelType: item.fuelType,
-          openingStock: item.openingStock || item.currentStock - (item.stockIn || 0) + (item.stockOut || 0),
+          openingStock:
+            item.openingStock ||
+            item.currentStock - (item.stockIn || 0) + (item.stockOut || 0),
           stockIn: item.stockIn || 0,
           stockOut: item.stockOut || 0,
           closingStock: item.currentStock,
@@ -246,47 +249,26 @@ function ReportsAndAnalytics() {
     }
   };
 
-  const loadStaffData = async () => {
-    try {
-      const response = await getEmployeePerformanceReport(
-        dateRange.startDate,
-        dateRange.endDate
-      );
-      
-      if (response.success && response.data.employeePerformance) {
-        const processedStaffData = response.data.employeePerformance.map(emp => ({
-          name: emp.employee.name,
-          totalSales: emp.metrics.totalSales,
-          transactions: emp.metrics.totalTransactions,
-          avgPerTransaction: emp.metrics.averageTransactionValue,
-          shifts: emp.metrics.shiftsWorked,
-          salesPerHour: emp.metrics.salesPerHour,
-        }));
-        setStaffPerformance(processedStaffData);
-      }
-    } catch (error) {
-      console.error("Error loading staff data:", error);
-      setStaffPerformance([]);
-    }
-  };
-
   const loadFinancialData = async () => {
     try {
       const response = await getFinancialSummaryReport(
         dateRange.startDate,
         dateRange.endDate
       );
-      
+
       if (response.success && response.data) {
         const summary = response.data.summary;
         const grossProfit = (summary.totalRevenue || 0) * 0.4; // Assuming 40% gross margin
-        
+
         setFinancialData({
           totalRevenue: summary.totalRevenue || 0,
           totalExpenses: summary.totalExpenses || 0,
           grossProfit,
           netProfit: summary.netIncome || 0,
-          profitMargin: summary.totalRevenue > 0 ? ((summary.netIncome || 0) / summary.totalRevenue) * 100 : 0,
+          profitMargin:
+            summary.totalRevenue > 0
+              ? ((summary.netIncome || 0) / summary.totalRevenue) * 100
+              : 0,
           incomeByCategory: response.data.incomeByCategory || {},
           expensesByCategory: response.data.expensesByCategory || {},
         });
@@ -317,9 +299,6 @@ function ReportsAndAnalytics() {
           break;
         case "financial":
           await loadFinancialData();
-          break;
-        case "staff":
-          await loadStaffData();
           break;
         default:
           break;
@@ -386,7 +365,7 @@ function ReportsAndAnalytics() {
 
       {/* Navigation Tabs */}
       <div className="flex space-x-1 border-b">
-        {["overview", "sales", "inventory", "financial", "staff"].map((tab) => (
+        {["overview", "sales", "inventory", "financial"].map((tab) => (
           <Button
             key={tab}
             variant={activeTab === tab ? "default" : "ghost"}
@@ -427,10 +406,14 @@ function ReportsAndAnalytics() {
                   ₵{overviewMetrics.netProfit.toFixed(2)}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {overviewMetrics.totalRevenue > 0 
-                    ? ((overviewMetrics.netProfit / overviewMetrics.totalRevenue) * 100).toFixed(1)
-                    : "0.0"
-                  }% margin
+                  {overviewMetrics.totalRevenue > 0
+                    ? (
+                        (overviewMetrics.netProfit /
+                          overviewMetrics.totalRevenue) *
+                        100
+                      ).toFixed(1)
+                    : "0.0"}
+                  % margin
                 </p>
               </CardContent>
             </Card>
@@ -471,7 +454,7 @@ function ReportsAndAnalytics() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Button
                   variant="outline"
                   className="h-20 flex flex-col items-center justify-center gap-2"
@@ -495,14 +478,6 @@ function ReportsAndAnalytics() {
                 >
                   <TrendingUp className="h-6 w-6" />
                   <span>P&L Statement</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center gap-2"
-                  onClick={() => generateReport("Staff Performance", "Excel")}
-                >
-                  <Download className="h-6 w-6" />
-                  <span>Staff Report</span>
                 </Button>
               </div>
             </CardContent>
@@ -568,7 +543,10 @@ function ReportsAndAnalytics() {
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                          <TableCell
+                            colSpan={6}
+                            className="text-center py-8 text-muted-foreground"
+                          >
                             No sales data available for the selected period
                           </TableCell>
                         </TableRow>
@@ -622,7 +600,10 @@ function ReportsAndAnalytics() {
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                          <TableCell
+                            colSpan={5}
+                            className="text-center py-8 text-muted-foreground"
+                          >
                             No pump performance data available
                           </TableCell>
                         </TableRow>
@@ -697,7 +678,10 @@ function ReportsAndAnalytics() {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        <TableCell
+                          colSpan={6}
+                          className="text-center py-8 text-muted-foreground"
+                        >
                           No inventory data available
                         </TableCell>
                       </TableRow>
@@ -737,7 +721,9 @@ function ReportsAndAnalytics() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <h4 className="font-medium text-green-600 mb-2">Revenue</h4>
+                      <h4 className="font-medium text-green-600 mb-2">
+                        Revenue
+                      </h4>
                       <div className="space-y-2">
                         <div className="flex justify-between">
                           <span>Fuel Sales</span>
@@ -750,19 +736,23 @@ function ReportsAndAnalytics() {
                       </div>
                     </div>
                     <div>
-                      <h4 className="font-medium text-red-600 mb-2">Expenses</h4>
+                      <h4 className="font-medium text-red-600 mb-2">
+                        Expenses
+                      </h4>
                       <div className="space-y-2">
                         <div className="flex justify-between">
                           <span>Cost of Goods Sold</span>
                           <span>
-                            ₵{(financialData.totalRevenue - financialData.grossProfit).toFixed(2)}
+                            ₵
+                            {(
+                              financialData.totalRevenue -
+                              financialData.grossProfit
+                            ).toFixed(2)}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span>Operating Expenses</span>
-                          <span>
-                            ₵{(financialData.totalExpenses).toFixed(2)}
-                          </span>
+                          <span>₵{financialData.totalExpenses.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between font-medium border-t pt-2">
                           <span>Total Expenses</span>
@@ -792,74 +782,6 @@ function ReportsAndAnalytics() {
                     </div>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {/* Staff Performance Tab */}
-      {activeTab === "staff" && (
-        <div className="space-y-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <span className="ml-2">Loading staff data...</span>
-            </div>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Staff Performance Report
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      exportData(staffPerformance, "staff_performance.xlsx")
-                    }
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
-                </CardTitle>
-                <CardDescription>
-                  Employee sales performance and productivity
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Total Sales</TableHead>
-                      <TableHead>Transactions</TableHead>
-                      <TableHead>Avg/Transaction</TableHead>
-                      <TableHead>Shifts Worked</TableHead>
-                      <TableHead>Sales/Hour</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {staffPerformance.length > 0 ? (
-                      staffPerformance.map((staff, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">
-                            {staff.name}
-                          </TableCell>
-                          <TableCell>₵{staff.totalSales.toFixed(2)}</TableCell>
-                          <TableCell>{staff.transactions}</TableCell>
-                          <TableCell>₵{staff.avgPerTransaction.toFixed(2)}</TableCell>
-                          <TableCell>{staff.shifts}</TableCell>
-                          <TableCell>₵{staff.salesPerHour.toFixed(2)}</TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                          No staff performance data available for the selected period
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
               </CardContent>
             </Card>
           )}

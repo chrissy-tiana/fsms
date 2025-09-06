@@ -18,16 +18,14 @@ import {
   Clock,
   Activity,
   Loader2,
+  LayoutDashboard,
 } from "lucide-react";
 import { getDashboardOverview } from "@/services/reports";
 import { getEmployeeStats } from "@/services/employees";
 import { getFuelSalesStats } from "@/services/fuelSales";
 import { getInventoryStats } from "@/services/inventory";
-import { getFinancialStats } from "@/services/financial";
-import { getShiftStats } from "@/services/shifts";
 import { getCurrentFuelPrices } from "@/services/fuelPrices";
 import { getFuelSales } from "@/services/fuelSales";
-import { getTransactions } from "@/services/financial";
 
 function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -35,7 +33,6 @@ function Dashboard() {
     sales: { revenue: 0, volume: 0, transactions: 0 },
     employees: { total: 0, active: 0 },
     inventory: { lowStock: 0, totalValue: 0 },
-    shifts: { active: 0, today: 0 },
     financial: { todayIncome: 0, todayExpenses: 0, netIncome: 0 },
     fuelPrices: [],
     recentActivity: [],
@@ -54,21 +51,15 @@ function Dashboard() {
         employeeStats,
         salesStats,
         inventoryStats,
-        financialStats,
-        shiftStats,
         fuelPrices,
         recentSales,
-        recentTransactions,
       ] = await Promise.all([
         getDashboardOverview(),
         getEmployeeStats(),
         getFuelSalesStats(),
         getInventoryStats(),
-        getFinancialStats(),
-        getShiftStats(),
         getCurrentFuelPrices(),
         getFuelSales({ limit: 5 }),
-        getTransactions({ limit: 5 }),
       ]);
 
       setStats({
@@ -85,34 +76,28 @@ function Dashboard() {
           lowStock: inventoryStats.data?.lowStockItems || 0,
           totalValue: inventoryStats.data?.totalValue || 0,
         },
-        shifts: {
-          active: shiftStats.data?.activeShifts || 0,
-          today: shiftStats.data?.todayShifts || 0,
-        },
         financial: {
-          todayIncome: financialStats.data?.today?.income || 0,
-          todayExpenses: financialStats.data?.today?.expenses || 0,
-          netIncome: financialStats.data?.today?.netIncome || 0,
+          todayIncome: salesStats.data?.totalSalesAmount || 0,
+          todayExpenses: 0,
+          netIncome: salesStats.data?.totalSalesAmount || 0,
         },
         fuelPrices: fuelPrices.success ? fuelPrices.data : [],
         recentActivity: [
-          ...(recentSales.success ? recentSales.data.map(sale => ({
-            id: sale._id,
-            type: 'fuel_sale',
-            description: `Fuel sale: ${sale.totalVolume?.toFixed(1) || '0.0'}L ${sale.fuelType}`,
-            amount: sale.totalAmount,
-            time: sale.dateTime,
-            user: sale.attendant,
-          })) : []),
-          ...(recentTransactions.success ? recentTransactions.data.map(transaction => ({
-            id: transaction._id,
-            type: transaction.type,
-            description: `${transaction.type === 'income' ? 'Income' : 'Expense'}: ${transaction.description}`,
-            amount: transaction.amount,
-            time: transaction.date,
-            user: transaction.recordedBy,
-          })) : []),
-        ].sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 8),
+          ...(recentSales.success
+            ? recentSales.data.map((sale) => ({
+                id: sale._id,
+                type: "fuel_sale",
+                description: `Fuel sale: ${
+                  sale.totalVolume?.toFixed(1) || "0.0"
+                }L ${sale.fuelType}`,
+                amount: sale.totalAmount,
+                time: sale.dateTime,
+                user: sale.attendant,
+              }))
+            : []),
+        ]
+          .sort((a, b) => new Date(b.time) - new Date(a.time))
+          .slice(0, 8),
       });
     } catch (error) {
       console.error("Failed to load dashboard data:", error);
@@ -136,14 +121,17 @@ function Dashboard() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <h1 className="flex gap-2 items-center text-3xl font-bold">
+          <LayoutDashboard />
+          Dashboard
+        </h1>
         <p className="text-muted-foreground mt-1">
           Overview of your fuel station operations
         </p>
       </div>
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -188,23 +176,10 @@ function Dashboard() {
             </p>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Shifts</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.shifts.active}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.shifts.today} shifts today
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Financial Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -217,21 +192,6 @@ function Dashboard() {
               ₵{stats.financial.todayIncome.toFixed(2)}
             </div>
             <p className="text-xs text-muted-foreground">Total income</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Today's Expenses
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-red-600 rotate-180" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              ₵{stats.financial.todayExpenses.toFixed(2)}
-            </div>
-            <p className="text-xs text-muted-foreground">Total expenses</p>
           </CardContent>
         </Card>
 
@@ -262,14 +222,18 @@ function Dashboard() {
           {stats.fuelPrices.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {stats.fuelPrices.map((price) => (
-                <div key={price.fuelType} className="text-center p-4 border rounded-lg">
+                <div
+                  key={price.fuelType}
+                  className="text-center p-4 border rounded-lg"
+                >
                   <h4 className="font-medium text-lg">{price.fuelType}</h4>
                   <div className="text-2xl font-bold text-green-600 my-2">
                     ₵{price.price.toFixed(2)}
                   </div>
                   <p className="text-sm text-muted-foreground">per liter</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Updated: {new Date(price.effectiveDate).toLocaleDateString()}
+                    Updated:{" "}
+                    {new Date(price.effectiveDate).toLocaleDateString()}
                   </p>
                 </div>
               ))}
@@ -295,9 +259,7 @@ function Dashboard() {
             <div className="text-2xl font-bold">
               ₵{stats.inventory.totalValue.toFixed(2)}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Total stock value
-            </p>
+            <p className="text-xs text-muted-foreground">Total stock value</p>
           </CardContent>
         </Card>
 
@@ -332,19 +294,29 @@ function Dashboard() {
           {stats.recentActivity.length > 0 ? (
             <div className="space-y-3">
               {stats.recentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div
+                  key={activity.id}
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
                   <div className="flex-1">
-                    <p className="font-medium text-sm">{activity.description}</p>
+                    <p className="font-medium text-sm">
+                      {activity.description}
+                    </p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                       <span>{activity.user}</span>
                       <span>•</span>
                       <span>{new Date(activity.time).toLocaleString()}</span>
                     </div>
                   </div>
-                  <div className={`font-bold text-sm ${
-                    activity.type === 'expense' ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    {activity.type === 'expense' ? '-' : '+'}₵{activity.amount?.toFixed(2) || '0.00'}
+                  <div
+                    className={`font-bold text-sm ${
+                      activity.type === "expense"
+                        ? "text-red-600"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {activity.type === "expense" ? "-" : "+"}₵
+                    {activity.amount?.toFixed(2) || "0.00"}
                   </div>
                 </div>
               ))}
@@ -361,9 +333,7 @@ function Dashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>
-            Common tasks and operations
-          </CardDescription>
+          <CardDescription>Common tasks and operations</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -380,13 +350,6 @@ function Dashboard() {
             >
               <Package className="h-8 w-8 mb-2 text-green-600" />
               <span className="text-sm font-medium">Add Stock</span>
-            </a>
-            <a
-              href="/shift-management"
-              className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <Clock className="h-8 w-8 mb-2 text-orange-600" />
-              <span className="text-sm font-medium">Start Shift</span>
             </a>
             <a
               href="/reports-analytics"

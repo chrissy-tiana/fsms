@@ -196,7 +196,6 @@ function EmployeeManagement() {
   };
 
   const activeEmployees = employees.filter((emp) => emp.status === "active");
-  const averageAttendance = stats.averageAttendance || 0;
 
   return (
     <div className="space-y-6 p-6">
@@ -207,7 +206,7 @@ function EmployeeManagement() {
             Employee Management
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage staff profiles, roles, and attendance
+            Manage staff profiles and roles
           </p>
         </div>
         <Button
@@ -220,7 +219,7 @@ function EmployeeManagement() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">
@@ -235,19 +234,6 @@ function EmployeeManagement() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              Average Attendance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {averageAttendance.toFixed(1)}%
-            </div>
-            <p className="text-xs text-muted-foreground">This month</p>
-          </CardContent>
-        </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">On Leave</CardTitle>
@@ -449,7 +435,6 @@ function EmployeeManagement() {
                 <TableHead>Employee</TableHead>
                 <TableHead>Role & Department</TableHead>
                 <TableHead>Contact</TableHead>
-                <TableHead>Attendance</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -504,16 +489,6 @@ function EmployeeManagement() {
                     </div>
                   </TableCell>
 
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">
-                        {employee.attendanceRate ? employee.attendanceRate.toFixed(1) : '0.0'}%
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {employee.totalHours || 0}h this month
-                      </div>
-                    </div>
-                  </TableCell>
                   <TableCell>
                     <Select
                       value={employee.status}
@@ -574,13 +549,6 @@ function EmployeeManagement() {
                 (emp) => emp.department === dept
               );
 
-              const deptAttendance =
-                deptEmployees.length > 0
-                  ? deptEmployees.reduce(
-                      (sum, emp) => sum + emp.attendanceRate,
-                      0
-                    ) / deptEmployees.length
-                  : 0;
 
               return (
                 <div key={dept} className="p-4 border rounded-lg">
@@ -593,12 +561,6 @@ function EmployeeManagement() {
                       </span>
                     </div>
 
-                    <div className="flex justify-between">
-                      <span>Avg Attendance:</span>
-                      <span className="font-medium">
-                        {deptAttendance.toFixed(1)}%
-                      </span>
-                    </div>
                   </div>
                 </div>
               );

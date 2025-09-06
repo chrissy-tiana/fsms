@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -24,20 +25,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Fuel, Calculator, User, Clock } from "lucide-react";
-import { createFuelSale, getFuelSales } from "@/services/fuelSales";
-
-const employeeProfile = {
-  name: "John Doe",
-  role: "Attendant",
-  branch: "Main Branch",
-};
+import { Plus, Fuel, Calculator, User, Clock, Loader2 } from "lucide-react";
+import {
+  getFuelSales,
+  createFuelSale,
+  updateFuelSale,
+  deleteFuelSale,
+  getFuelSalesStats,
+} from "@/services/fuelSales";
+import { getCurrentFuelPrices } from "@/services/fuelPrices";
+import { getCurrentUser } from "@/services/auth";
 
 function FuelSales() {
   const [showForm, setShowForm] = useState(false);
-  const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [stats, setStats] = useState({});
+  const [sales, setSales] = useState([]);
+  const [fuelPrices, setFuelPrices] = useState({});
+  const [fetchingPrice, setFetchingPrice] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   const [formData, setFormData] = useState({
     dateTime: new Date().toISOString().slice(0, 16),
@@ -51,20 +58,6 @@ function FuelSales() {
     attendant: "",
   });
 
-  useEffect(() => {
-    async function fetchSales() {
-      setLoading(true);
-      try {
-        const data = await getFuelSales();
-        setSales(Array.isArray(data) ? data : []);
-      } catch {
-        setSales([]);
-      }
-      setLoading(false);
-    }
-    fetchSales();
-  }, []);
-
   const calculateValues = (openingReading, closingReading, pricePerLiter) => {
     const volume = parseFloat(closingReading) - parseFloat(openingReading);
     const amount = volume * parseFloat(pricePerLiter);
@@ -77,6 +70,8 @@ function FuelSales() {
   const handleInputChange = (field, value) => {
     setFormData((prev) => {
       const updated = { ...prev, [field]: value };
+
+      // Auto-calculate when all required fields are present
       if (
         field === "openingReading" ||
         field === "closingReading" ||
@@ -96,306 +91,548 @@ function FuelSales() {
           updated.totalAmount = calculations.totalAmount;
         }
       }
+
       return updated;
     });
+
+    // Auto-fetch price when fuel type is selected
+    if (field === "fuelType" && value) {
+      handleFuelTypeChange(value);
+    }
+  };
+
+  const handleFuelTypeChange = async (fuelType) => {
+    const price = await fetchFuelPrice(fuelType);
+    if (price) {
+      setFormData((prev) => {
+        const updated = { ...prev, pricePerLiter: price.toString() };
+
+        // Auto-calculate if we have all required values
+        if (updated.openingReading && updated.closingReading) {
+          const calculations = calculateValues(
+            updated.openingReading,
+            updated.closingReading,
+            price
+          );
+          updated.totalVolume = calculations.totalVolume;
+          updated.totalAmount = calculations.totalAmount;
+        }
+
+        return updated;
+      });
+    }
+  };
+
+  const fetchFuelPrice = async (fuelType) => {
+    if (!fuelType || fuelPrices[fuelType]) {
+      return fuelPrices[fuelType]?.price;
+    }
+
+    setFetchingPrice(true);
+    try {
+      const response = await getCurrentFuelPrices();
+      if (response.success && response.data) {
+        const pricesMap = {};
+        response.data.forEach((priceData) => {
+          pricesMap[priceData.fuelType] = priceData;
+        });
+        setFuelPrices(pricesMap);
+
+        const selectedFuelPrice = pricesMap[fuelType];
+        if (selectedFuelPrice) {
+          toast.success(
+            `Price loaded: ₵${selectedFuelPrice.price.toFixed(
+              2
+            )} per liter for ${fuelType}`
+          );
+          return selectedFuelPrice.price;
+        } else {
+          toast.warning(`No current price found for ${fuelType}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching fuel prices:", error);
+      toast.error("Failed to fetch current fuel prices");
+    } finally {
+      setFetchingPrice(false);
+    }
+    return null;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
+    setSaving(true);
+
     try {
-      const payload = {
+      const saleData = {
         ...formData,
         openingReading: parseFloat(formData.openingReading),
         closingReading: parseFloat(formData.closingReading),
         pricePerLiter: parseFloat(formData.pricePerLiter),
-        totalVolume: parseFloat(formData.totalVolume),
-        totalAmount: parseFloat(formData.totalAmount),
       };
-      await createFuelSale(payload);
-      setFormData({
-        dateTime: new Date().toISOString().slice(0, 16),
-        pumpNumber: "",
-        fuelType: "",
-        openingReading: "",
-        closingReading: "",
-        pricePerLiter: "",
-        totalVolume: "",
-        totalAmount: "",
-        attendant: "",
-      });
-      const data = await getFuelSales();
-      setSales(Array.isArray(data) ? data : []);
-    } catch {}
-    setSubmitting(false);
+
+      const response = await createFuelSale(saleData);
+      if (response.success) {
+        setSales((prev) => [response.data, ...prev]);
+        toast.success("Fuel sale recorded successfully");
+
+        // Reset form but keep current user as attendant
+        const attendantName = currentUser
+          ? currentUser.fullName || currentUser.name || "Current User"
+          : "Current User";
+
+        setFormData({
+          dateTime: new Date().toISOString().slice(0, 16),
+          pumpNumber: "",
+          fuelType: "",
+          openingReading: "",
+          closingReading: "",
+          pricePerLiter: "",
+          totalVolume: "",
+          totalAmount: "",
+          attendant: attendantName,
+        });
+        setShowForm(false);
+
+        // Refresh stats
+        loadStats();
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to record sale");
+    } finally {
+      setSaving(false);
+    }
   };
 
+  // Load data on component mount
+  useEffect(() => {
+    loadSales();
+    loadStats();
+    loadFuelPrices();
+    loadCurrentUser();
+  }, []);
+
+  const loadFuelPrices = async () => {
+    try {
+      const response = await getCurrentFuelPrices();
+      if (response.success && response.data) {
+        const pricesMap = {};
+        response.data.forEach((priceData) => {
+          pricesMap[priceData.fuelType] = priceData;
+        });
+        setFuelPrices(pricesMap);
+      }
+    } catch (error) {
+      console.error("Error loading fuel prices:", error);
+    }
+  };
+
+  const loadCurrentUser = async () => {
+    try {
+      const userData = await getCurrentUser();
+      if (userData && userData.success) {
+        setCurrentUser(userData.data);
+        // Update form data with current user's name
+        setFormData((prev) => ({
+          ...prev,
+          attendant:
+            userData.data.fullName || userData.data.name || "Unknown User",
+        }));
+      }
+    } catch (error) {
+      console.error("Error loading current user:", error);
+      setFormData((prev) => ({
+        ...prev,
+        attendant: "Current User",
+      }));
+    }
+  };
+
+  const loadSales = async () => {
+    try {
+      const response = await getFuelSales({ limit: 50 });
+      if (response.success) {
+        setSales(response.data);
+      }
+    } catch (error) {
+      toast.error("Failed to load fuel sales");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    try {
+      const response = await getFuelSalesStats();
+      if (response.success) {
+        setStats(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to load stats:", error);
+    }
+  };
+
+  const totalSalesAmount =
+    stats.totalSalesAmount ||
+    sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+  const totalVolume =
+    stats.totalVolume || sales.reduce((sum, sale) => sum + sale.totalVolume, 0);
+  const totalTransactions = stats.totalTransactions || sales.length;
+
   return (
-    <div className="max-w-4xl mx-auto p-2 md:p-4">
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-        <main className="flex-1 space-y-4 md:space-y-6">
-          <div className="flex flex-col items-center mb-2">
-            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-              <Fuel className="h-6 w-6 md:h-7 md:w-7" />
-              Log Fuel Sale
-            </h1>
-            <p className="text-center text-muted-foreground text-sm md:text-base">
-              Enter details for each fuel sale. Only fuel sales are available
-              for employees.
-            </p>
-          </div>
-          {showForm && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Fuel Sale Entry</CardTitle>
-                <CardDescription>Fill out the form below</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium flex items-center gap-2">
-                        <Clock className="h-4 w-4" />
-                        Date & Time
-                      </label>
-                      <Input
-                        type="datetime-local"
-                        value={formData.dateTime}
-                        onChange={(e) =>
-                          handleInputChange("dateTime", e.target.value)
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">Pump Number</label>
-                      <Select
-                        value={formData.pumpNumber}
-                        onValueChange={(value) =>
-                          handleInputChange("pumpNumber", value)
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select pump" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Pump 01">Pump 01</SelectItem>
-                          <SelectItem value="Pump 02">Pump 02</SelectItem>
-                          <SelectItem value="Pump 03">Pump 03</SelectItem>
-                          <SelectItem value="Pump 04">Pump 04</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">Fuel Type</label>
-                      <Select
-                        value={formData.fuelType}
-                        onValueChange={(value) =>
-                          handleInputChange("fuelType", value)
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select fuel type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Petrol">Petrol</SelectItem>
-                          <SelectItem value="Diesel">Diesel</SelectItem>
-                          <SelectItem value="Premium">Premium</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        Attendant Name
-                      </label>
-                      <Input
-                        value={formData.attendant}
-                        onChange={(e) =>
-                          handleInputChange("attendant", e.target.value)
-                        }
-                        placeholder="Enter attendant name"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">
-                        Opening Reading (L)
-                      </label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.openingReading}
-                        onChange={(e) =>
-                          handleInputChange("openingReading", e.target.value)
-                        }
-                        placeholder="0.00"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">
-                        Closing Reading (L)
-                      </label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.closingReading}
-                        onChange={(e) =>
-                          handleInputChange("closingReading", e.target.value)
-                        }
-                        placeholder="0.00"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">
-                        Price per Liter (₵)
-                      </label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.pricePerLiter}
-                        onChange={(e) =>
-                          handleInputChange("pricePerLiter", e.target.value)
-                        }
-                        placeholder="0.00"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium flex items-center gap-2">
-                        <Calculator className="h-4 w-4" />
-                        Total Volume (L)
-                      </label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.totalVolume}
-                        readOnly
-                        className="bg-gray-50"
-                        placeholder="Auto-calculated"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">
-                        Total Amount (₵)
-                      </label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.totalAmount}
-                        readOnly
-                        className="bg-gray-50"
-                        placeholder="Auto-calculated"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2 pt-2 justify-center">
-                    <Button
-                      type="submit"
-                      className="bg-black text-white"
-                      disabled={submitting}
-                    >
-                      {submitting ? "Saving..." : "Save Sale"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setShowForm(false)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          )}
-          {!showForm && (
-            <div className="flex justify-center mt-8">
-              <Button
-                onClick={() => setShowForm(true)}
-                className="bg-black text-white"
-              >
-                <Plus className="h-4 w-4 mr-2" /> Add New Sale
-              </Button>
+    <div className="space-y-6 p-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <Fuel className="h-8 w-8" />
+            Fuel Sales Management
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Record and manage all fuel sales transactions
+          </p>
+        </div>
+        <Button
+          onClick={() => setShowForm(true)}
+          className="bg-black text-white"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add New Sale
+        </Button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              ₵{totalSalesAmount.toFixed(2)}
             </div>
-          )}
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Sales</CardTitle>
-              <CardDescription>
-                View all fuel sales transactions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="text-center py-6 text-muted-foreground">
-                  Loading sales...
+            <p className="text-xs text-muted-foreground">Total revenue today</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Volume Sold</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalVolume.toFixed(2)}L</div>
+            <p className="text-xs text-muted-foreground">Total volume today</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Transactions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalTransactions}</div>
+            <p className="text-xs text-muted-foreground">
+              Total transactions today
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* New Sale Form */}
+      {showForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Add New Fuel Sale</CardTitle>
+            <CardDescription>
+              Enter the details of the fuel sale transaction
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Date & Time
+                  </label>
+                  <Input
+                    type="datetime-local"
+                    value={formData.dateTime}
+                    onChange={(e) =>
+                      handleInputChange("dateTime", e.target.value)
+                    }
+                    required
+                    disabled={true}
+                  />
                 </div>
-              ) : sales.length === 0 ? (
-                <div className="text-center py-6 text-muted-foreground">
-                  No sales recorded yet.
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Pump Number</label>
+                  <Select
+                    value={formData.pumpNumber}
+                    onValueChange={(value) =>
+                      handleInputChange("pumpNumber", value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select pump" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Pump 01">Pump 01</SelectItem>
+                      <SelectItem value="Pump 02">Pump 02</SelectItem>
+                      <SelectItem value="Pump 03">Pump 03</SelectItem>
+                      <SelectItem value="Pump 04">Pump 04</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date & Time</TableHead>
-                        <TableHead>Pump</TableHead>
-                        <TableHead>Fuel Type</TableHead>
-                        <TableHead>Volume (L)</TableHead>
-                        <TableHead>Price/L</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Attendant</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sales.map((sale) => (
-                        <TableRow key={sale.id}>
-                          <TableCell>
-                            {new Date(sale.dateTime).toLocaleString()}
-                          </TableCell>
-                          <TableCell>{sale.pumpNumber}</TableCell>
-                          <TableCell>{sale.fuelType}</TableCell>
-                          <TableCell>
-                            {Number(sale.totalVolume).toFixed(2)}
-                          </TableCell>
-                          <TableCell>
-                            ₵{Number(sale.pricePerLiter).toFixed(2)}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            ₵{Number(sale.totalAmount).toFixed(2)}
-                          </TableCell>
-                          <TableCell>{sale.attendant}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Fuel Type</label>
+                  <Select
+                    value={formData.fuelType}
+                    onValueChange={(value) =>
+                      handleInputChange("fuelType", value)
+                    }
+                    disabled={fetchingPrice}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          fetchingPrice
+                            ? "Loading prices..."
+                            : "Select fuel type"
+                        }
+                      />
+                      {fetchingPrice && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Petrol">
+                        <div className="flex justify-between items-center w-full">
+                          <span>Petrol</span>
+                          {fuelPrices.Petrol && (
+                            <span className="text-sm text-muted-foreground ml-4">
+                              ₵{fuelPrices.Petrol.price.toFixed(2)}/L
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Diesel">
+                        <div className="flex justify-between items-center w-full">
+                          <span>Diesel</span>
+                          {fuelPrices.Diesel && (
+                            <span className="text-sm text-muted-foreground ml-4">
+                              ₵{fuelPrices.Diesel.price.toFixed(2)}/L
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Premium">
+                        <div className="flex justify-between items-center w-full">
+                          <span>Premium</span>
+                          {fuelPrices.Premium && (
+                            <span className="text-sm text-muted-foreground ml-4">
+                              ₵{fuelPrices.Premium.price.toFixed(2)}/L
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </main>
-        {/* <aside className="w-full md:w-64 mt-4 md:mt-0">
-          <Card className="shadow-md pt-2 transition-transform duration-200 hover:scale-105 hover:shadow-lg cursor-pointer">
-            <CardContent>
-              <div className="flex flex-col items-center gap-1">
-                <div className="text-lg font-semibold">
-                  {employeeProfile.name}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Attendant Name
+                    <span className="text-xs text-green-600 ml-2">
+                      (Current User)
+                    </span>
+                  </label>
+                  <Input
+                    value={formData.attendant}
+                    readOnly
+                    className="bg-green-50 border-green-200"
+                    placeholder="Loading user..."
+                  />
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  {employeeProfile.role}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Opening Reading (L)
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.openingReading}
+                    onChange={(e) =>
+                      handleInputChange("openingReading", e.target.value)
+                    }
+                    placeholder="0.00"
+                    required
+                  />
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {employeeProfile.branch}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Closing Reading (L)
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.closingReading}
+                    onChange={(e) =>
+                      handleInputChange("closingReading", e.target.value)
+                    }
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Price per Liter (₵)
+                    {formData.fuelType && fuelPrices[formData.fuelType] && (
+                      <span className="text-xs text-green-600 ml-2">
+                        (Auto-filled from current prices)
+                      </span>
+                    )}
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.pricePerLiter}
+                    onChange={(e) =>
+                      handleInputChange("pricePerLiter", e.target.value)
+                    }
+                    placeholder={
+                      formData.fuelType && fuelPrices[formData.fuelType]
+                        ? `Current: ₵${fuelPrices[
+                            formData.fuelType
+                          ].price.toFixed(2)}`
+                        : "0.00"
+                    }
+                    className={
+                      formData.fuelType && fuelPrices[formData.fuelType]
+                        ? "border-green-300 bg-green-50"
+                        : ""
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Calculator className="h-4 w-4" />
+                    Total Volume (L)
+                    <span className="text-xs text-blue-600">
+                      (Auto-calculated)
+                    </span>
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.totalVolume}
+                    readOnly
+                    className="bg-blue-50 border-blue-200"
+                    placeholder="Closing - Opening reading"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Total Amount (₵)
+                    <span className="text-xs text-blue-600 ml-2">
+                      (Auto-calculated)
+                    </span>
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.totalAmount}
+                    readOnly
+                    className="bg-blue-50 border-blue-200"
+                    placeholder="Volume × Price per liter"
+                  />
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </aside> */}
-      </div>
+              <div className="flex gap-2 pt-4">
+                <Button
+                  type="submit"
+                  className="bg-black text-white"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : null}
+                  Save Sale
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowForm(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sales History */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Sales</CardTitle>
+          <CardDescription>View all fuel sales transactions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date & Time</TableHead>
+                <TableHead>Pump</TableHead>
+                <TableHead>Fuel Type</TableHead>
+                <TableHead>Volume (L)</TableHead>
+                <TableHead>Price/L</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Attendant</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+                    <p className="mt-2 text-muted-foreground">
+                      Loading sales...
+                    </p>
+                  </TableCell>
+                </TableRow>
+              ) : sales.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8">
+                    <p className="text-muted-foreground">No sales found</p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sales.map((sale) => (
+                  <TableRow key={sale._id || sale.saleId}>
+                    <TableCell>
+                      {new Date(sale.dateTime).toLocaleString()}
+                    </TableCell>
+                    <TableCell>{sale.pumpNumber}</TableCell>
+                    <TableCell>{sale.fuelType}</TableCell>
+                    <TableCell>
+                      {sale.totalVolume ? sale.totalVolume.toFixed(2) : "0.00"}
+                    </TableCell>
+                    <TableCell>
+                      ₵
+                      {sale.pricePerLiter
+                        ? sale.pricePerLiter.toFixed(2)
+                        : "0.00"}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      ₵{sale.totalAmount ? sale.totalAmount.toFixed(2) : "0.00"}
+                    </TableCell>
+                    <TableCell>{sale.attendant}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
