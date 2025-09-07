@@ -278,19 +278,6 @@ function DigitalSignboardManagement() {
         const display2Ref = ref(database, "Filling Station/display2");
         await set(display2Ref, premiumDisplay);
       }
-
-      // Log the sync to history
-      if (petrolPrice || premiumPrice) {
-        // const historyRef = ref(database, "Filling Station/signboard/history");
-        await push(historyRef, {
-          type: "auto-sync",
-          display1: petrolPrice ? `${petrolPrice.price.toFixed(3)}` : null,
-          display2: premiumPrice ? `${premiumPrice.price.toFixed(3)}` : null,
-          timestamp: new Date().toISOString(),
-          source: "MongoDB",
-          updatedBy: "System Auto-Sync",
-        });
-      }
     } catch (error) {
       console.error("Error syncing prices to Firebase:", error);
     }
