@@ -269,13 +269,13 @@ function DigitalSignboardManagement() {
 
       if (petrolPrice) {
         const petrolDisplay = `${petrolPrice.price.toFixed(3)}`;
-        const display1Ref = ref(database, "Filling Station/signboard/display1");
+        const display1Ref = ref(database, "Filling Station/display1");
         await set(display1Ref, petrolDisplay);
       }
 
       if (premiumPrice) {
         const premiumDisplay = `${premiumPrice.price.toFixed(3)}`;
-        const display2Ref = ref(database, "Filling Station/signboard/display2");
+        const display2Ref = ref(database, "Filling Station/display2");
         await set(display2Ref, premiumDisplay);
       }
 
@@ -309,7 +309,7 @@ function DigitalSignboardManagement() {
   // Firebase update functions
   const updateDisplay1 = async () => {
     try {
-      const display1Ref = ref(database, "Filling Station/signboard/display1");
+      const display1Ref = ref(database, "Filling Station/display1");
       await set(display1Ref, displayForm.display1Input);
 
       // Log the update to history
@@ -330,7 +330,7 @@ function DigitalSignboardManagement() {
 
   const updateDisplay2 = async () => {
     try {
-      const display2Ref = ref(database, "Filling Station/signboard/display2");
+      const display2Ref = ref(database, "Filling Station/display2");
       await set(display2Ref, displayForm.display2Input);
 
       // Log the update to history
@@ -351,8 +351,8 @@ function DigitalSignboardManagement() {
 
   const updateBothDisplays = async () => {
     try {
-      const display1Ref = ref(database, "Filling Station/signboard/display1");
-      const display2Ref = ref(database, "Filling Station/signboard/display2");
+      const display1Ref = ref(database, "Filling Station/display1");
+      const display2Ref = ref(database, "Filling Station/display2");
 
       await set(display1Ref, displayForm.display1Input);
       await set(display2Ref, displayForm.display2Input);
