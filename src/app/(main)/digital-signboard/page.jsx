@@ -281,7 +281,7 @@ function DigitalSignboardManagement() {
 
       // Log the sync to history
       if (petrolPrice || premiumPrice) {
-        const historyRef = ref(database, "Filling Station/signboard/history");
+        // const historyRef = ref(database, "Filling Station/signboard/history");
         await push(historyRef, {
           type: "auto-sync",
           display1: petrolPrice ? `${petrolPrice.price.toFixed(3)}` : null,
@@ -303,74 +303,6 @@ function DigitalSignboardManagement() {
       toast.success("Prices synced to Firebase successfully!");
     } else {
       toast.error("No prices available to sync");
-    }
-  };
-
-  // Firebase update functions
-  const updateDisplay1 = async () => {
-    try {
-      const display1Ref = ref(database, "Filling Station/display1");
-      await set(display1Ref, displayForm.display1Input);
-
-      // Log the update to history
-      const historyRef = ref(database, "Filling Station/signboard/history");
-      await push(historyRef, {
-        display: "display1",
-        value: displayForm.display1Input,
-        timestamp: new Date().toISOString(),
-        updatedBy: "Current User",
-      });
-
-      toast.success("Display 1 updated successfully!");
-    } catch (error) {
-      console.error("Error updating Display 1:", error);
-      toast.error("Failed to update Display 1");
-    }
-  };
-
-  const updateDisplay2 = async () => {
-    try {
-      const display2Ref = ref(database, "Filling Station/display2");
-      await set(display2Ref, displayForm.display2Input);
-
-      // Log the update to history
-      const historyRef = ref(database, "Filling Station/signboard/history");
-      await push(historyRef, {
-        display: "display2",
-        value: displayForm.display2Input,
-        timestamp: new Date().toISOString(),
-        updatedBy: "Current User",
-      });
-
-      toast.success("Display 2 updated successfully!");
-    } catch (error) {
-      console.error("Error updating Display 2:", error);
-      toast.error("Failed to update Display 2");
-    }
-  };
-
-  const updateBothDisplays = async () => {
-    try {
-      const display1Ref = ref(database, "Filling Station/display1");
-      const display2Ref = ref(database, "Filling Station/display2");
-
-      await set(display1Ref, displayForm.display1Input);
-      await set(display2Ref, displayForm.display2Input);
-
-      // Log the update to history
-      const historyRef = ref(database, "Filling Station/signboard/history");
-      await push(historyRef, {
-        display: "both",
-        display1: displayForm.display1Input,
-        display2: displayForm.display2Input,
-        timestamp: new Date().toISOString(),
-        updatedBy: "Current User",
-      });
-
-      toast.success("Both displays updated successfully!");
-    } catch (error) {
-      console.error("Error updating displays:", error);
-      toast.error("Failed to update displays");
     }
   };
 
