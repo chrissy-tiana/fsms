@@ -78,8 +78,8 @@ function DigitalSignboardManagement() {
     loadAllData();
 
     // Set up Firebase Realtime Database listeners
-    const display1Ref = ref(database, "Filling Station/signboard/display1");
-    const display2Ref = ref(database, "Filling Station/signboard/display2");
+    const display1Ref = ref(database, "Filling Station/display1");
+    const display2Ref = ref(database, "Filling Station/display2");
 
     const unsubscribe1 = onValue(
       display1Ref,
