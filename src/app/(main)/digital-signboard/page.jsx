@@ -269,13 +269,13 @@ function DigitalSignboardManagement() {
 
       if (petrolPrice) {
         const petrolDisplay = `${petrolPrice.price.toFixed(3)}`;
-        const display1Ref = ref(database, "Filling Station/display1");
+        const display1Ref = ref(database, "display1");
         await set(display1Ref, petrolDisplay);
       }
 
       if (premiumPrice) {
         const premiumDisplay = `${premiumPrice.price.toFixed(3)}`;
-        const display2Ref = ref(database, "Filling Station/display2");
+        const display2Ref = ref(database, "display2");
         await set(display2Ref, premiumDisplay);
       }
     } catch (error) {
