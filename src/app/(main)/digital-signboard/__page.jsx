@@ -183,10 +183,10 @@ function DigitalSignboardManagement() {
 
     const previousPrice = history[1].price;
     const change = currentPrice - previousPrice;
-    const percentage = ((change / previousPrice) * 100).toFixed(2);
+    const percentage = ((change / previousPrice) * 100).toFixed(3);
 
     return {
-      change: change.toFixed(2),
+      change: change.toFixed(3),
       percentage,
       previous: previousPrice,
     };
@@ -276,7 +276,7 @@ function DigitalSignboardManagement() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ₵{priceStats.averagePrice?.toFixed(2) || "0.00"}
+              ₵{priceStats.averagePrice?.toFixed(3) || "0.00"}
             </div>
             <p className="text-xs text-muted-foreground">
               Across all fuel types
@@ -340,7 +340,7 @@ function DigitalSignboardManagement() {
                         </div>
                         <div className="text-center">
                           <div className="text-4xl font-bold text-green-600 mb-2">
-                            ₵{price.price.toFixed(2)}
+                            ₵{price.price.toFixed(3)}
                           </div>
                           <div className="text-sm text-muted-foreground mb-2">
                             per liter
@@ -497,14 +497,14 @@ function DigitalSignboardManagement() {
                     const change = newPrice - currentPrice;
                     const percentage =
                       currentPrice > 0
-                        ? ((change / currentPrice) * 100).toFixed(2)
+                        ? ((change / currentPrice) * 100).toFixed(3)
                         : "0.00";
 
                     return (
                       <div className="text-sm">
                         <p>
-                          {priceForm.fuelType}: ₵{currentPrice.toFixed(2)} → ₵
-                          {newPrice.toFixed(2)}
+                          {priceForm.fuelType}: ₵{currentPrice.toFixed(3)} → ₵
+                          {newPrice.toFixed(3)}
                         </p>
                         <p
                           className={
@@ -515,7 +515,7 @@ function DigitalSignboardManagement() {
                               : "text-gray-600"
                           }
                         >
-                          Change: {change > 0 ? "+" : ""}₵{change.toFixed(2)} (
+                          Change: {change > 0 ? "+" : ""}₵{change.toFixed(3)} (
                           {change > 0 ? "+" : ""}
                           {percentage}%)
                         </p>
@@ -565,7 +565,7 @@ function DigitalSignboardManagement() {
                         </TableCell>
                         <TableCell>
                           <span className="font-medium">
-                            ₵{entry.price.toFixed(2)}
+                            ₵{entry.price.toFixed(3)}
                           </span>
                         </TableCell>
                         <TableCell>

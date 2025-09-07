@@ -35,7 +35,7 @@ signInWithEmailAndPassword(auth, "christyminiproject@gmail.com", "1234567890")
     // Write data
     const refPath = ref(db, "messages/firstMessage");
     return set(refPath, {
-      text: "Hello Firebase!",
+      text: "Hello FSMS!",
       createdBy: userCredential.user.email,
     });
   })

@@ -20,9 +20,9 @@ function AuthLanding() {
         <Button variant="outline">
           <Link href="/login">Login</Link>
         </Button>
-        <Button>
+        {/* <Button>
           <Link href="/dashboard">Dashboard</Link>
-        </Button>
+        </Button> */}
       </div>
     </div>
   );
