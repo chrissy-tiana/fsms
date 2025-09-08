@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://fsms-api.onrender.com",
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3002",
   withCredentials: true,
 });
 

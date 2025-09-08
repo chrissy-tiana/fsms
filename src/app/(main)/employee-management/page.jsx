@@ -46,6 +46,7 @@ import {
   updateEmployeeStatus,
   getEmployeeStats,
 } from "@/services/employees";
+import { getUsers, updateUserStatus, deleteUser } from "@/services/users";
 
 function EmployeeManagement() {
   const [showEmployeeForm, setShowEmployeeForm] = useState(false);
@@ -55,6 +56,8 @@ function EmployeeManagement() {
   const [stats, setStats] = useState({});
 
   const [employees, setEmployees] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [allPersonnel, setAllPersonnel] = useState([]);
 
   const [employeeForm, setEmployeeForm] = useState({
     name: "",
@@ -84,7 +87,10 @@ function EmployeeManagement() {
     try {
       if (editingEmployee) {
         // Update existing employee
-        const response = await updateEmployee(editingEmployee._id, employeeForm);
+        const response = await updateEmployee(
+          editingEmployee._id,
+          employeeForm
+        );
         if (response.success) {
           setEmployees((prev) =>
             prev.map((emp) =>
@@ -129,36 +135,73 @@ function EmployeeManagement() {
       address: employee.address,
       role: employee.role,
       department: employee.department,
-      dateJoined: employee.dateJoined ? new Date(employee.dateJoined).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      dateJoined: employee.dateJoined
+        ? new Date(employee.dateJoined).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10),
     });
     setEditingEmployee(employee);
     setShowEmployeeForm(true);
   };
 
-  const handleDelete = async (employeeId) => {
-    if (confirm("Are you sure you want to delete this employee?")) {
+  const handleDelete = async (personId, personType) => {
+    const confirmMessage = personType === 'employee' 
+      ? "Are you sure you want to delete this employee?" 
+      : "Are you sure you want to delete this user?";
+    
+    if (confirm(confirmMessage)) {
       try {
-        const response = await deleteEmployee(employeeId);
+        let response;
+        if (personType === 'employee') {
+          response = await deleteEmployee(personId);
+          if (response.success) {
+            setEmployees((prev) => prev.filter((emp) => emp._id !== personId));
+          }
+        } else {
+          response = await deleteUser(personId);
+          if (response.success) {
+            setUsers((prev) => prev.filter((user) => user._id !== personId));
+          }
+        }
+        
         if (response.success) {
-          setEmployees((prev) => prev.filter((emp) => emp._id !== employeeId));
-          toast.success("Employee deleted successfully");
+          setAllPersonnel((prev) => prev.filter((person) => person._id !== personId));
+          toast.success(`${personType === 'employee' ? 'Employee' : 'User'} deleted successfully`);
         }
       } catch (error) {
-        toast.error(error.response?.data?.message || "Failed to delete employee");
+        toast.error(
+          error.response?.data?.message || `Failed to delete ${personType}`
+        );
       }
     }
   };
 
-  const handleStatusChange = async (employeeId, newStatus) => {
+  const handleStatusChange = async (personId, newStatus, personType) => {
     try {
-      const response = await updateEmployeeStatus(employeeId, newStatus);
+      let response;
+      if (personType === 'employee') {
+        response = await updateEmployeeStatus(personId, newStatus);
+        if (response.success) {
+          setEmployees((prev) =>
+            prev.map((emp) => (emp._id === personId ? response.data : emp))
+          );
+        }
+      } else {
+        response = await updateUserStatus(personId, newStatus);
+        if (response.success) {
+          setUsers((prev) =>
+            prev.map((user) => (user._id === personId ? response.data : user))
+          );
+        }
+      }
+      
       if (response.success) {
-        setEmployees((prev) =>
-          prev.map((emp) =>
-            emp._id === employeeId ? response.data : emp
+        // Update allPersonnel list
+        setAllPersonnel((prev) =>
+          prev.map((person) => 
+            person._id === personId ? { ...response.data, type: personType } : person
           )
         );
-        toast.success("Employee status updated successfully");
+        toast.success(`${personType === 'employee' ? 'Employee' : 'User'} status updated successfully`);
       }
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to update status");
@@ -167,21 +210,50 @@ function EmployeeManagement() {
 
   // Load data on component mount
   useEffect(() => {
-    loadEmployees();
-    loadStats();
+    loadAllData();
   }, []);
+
+  const loadAllData = async () => {
+    setLoading(true);
+    await Promise.all([
+      loadEmployees(),
+      loadUsers(),
+      loadStats(),
+    ]);
+    setLoading(false);
+  };
 
   const loadEmployees = async () => {
     try {
       const response = await getEmployees();
       if (response.success) {
         setEmployees(response.data);
+        updateAllPersonnel(response.data, users);
       }
     } catch (error) {
       toast.error("Failed to load employees");
-    } finally {
-      setLoading(false);
     }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const response = await getUsers();
+      if (response.success) {
+        setUsers(response.data);
+        updateAllPersonnel(employees, response.data);
+      }
+    } catch (error) {
+      toast.error("Failed to load users");
+    }
+  };
+
+  const updateAllPersonnel = (employeesList, usersList) => {
+    // Combine employees and users, marking their type
+    const combinedList = [
+      ...employeesList.map(emp => ({ ...emp, type: 'employee' })),
+      ...usersList.map(user => ({ ...user, type: 'user' }))
+    ];
+    setAllPersonnel(combinedList);
   };
 
   const loadStats = async () => {
@@ -196,6 +268,8 @@ function EmployeeManagement() {
   };
 
   const activeEmployees = employees.filter((emp) => emp.status === "active");
+  const activeUsers = users.filter((user) => user.status === "active" || !user.status);
+  const totalActive = activeEmployees.length + activeUsers.length;
 
   return (
     <div className="space-y-6 p-6">
@@ -227,22 +301,26 @@ function EmployeeManagement() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalEmployees || employees.length}</div>
+            <div className="text-2xl font-bold">
+              {allPersonnel.length}
+            </div>
             <p className="text-xs text-muted-foreground">
-              {stats.activeEmployees || activeEmployees.length} active
+              {employees.length} employees, {users.length} users
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">On Leave</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Personnel</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">
-              {stats.onLeaveEmployees || employees.filter((emp) => emp.status === "on_leave").length}
+            <div className="text-2xl font-bold text-green-600">
+              {totalActive}
             </div>
-            <p className="text-xs text-muted-foreground">Currently away</p>
+            <p className="text-xs text-muted-foreground">
+              {activeEmployees.length} employees, {activeUsers.length} users
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -389,7 +467,11 @@ function EmployeeManagement() {
                 </div>
               </div>
               <div className="flex gap-2 pt-4">
-                <Button type="submit" className="bg-black text-white" disabled={saving}>
+                <Button
+                  type="submit"
+                  className="bg-black text-white"
+                  disabled={saving}
+                >
                   {saving ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : null}
@@ -420,19 +502,20 @@ function EmployeeManagement() {
         </Card>
       )}
 
-      {/* Employee List */}
+      {/* Personnel List */}
       <Card>
         <CardHeader>
-          <CardTitle>Employee Directory</CardTitle>
+          <CardTitle>Personnel Directory</CardTitle>
           <CardDescription>
-            Manage all staff members and their information
+            Manage all employees and system users
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Employee</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Role & Department</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Status</TableHead>
@@ -442,92 +525,107 @@ function EmployeeManagement() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto" />
-                    <p className="mt-2 text-muted-foreground">Loading employees...</p>
+                    <p className="mt-2 text-muted-foreground">
+                      Loading personnel...
+                    </p>
                   </TableCell>
                 </TableRow>
-              ) : employees.length === 0 ? (
+              ) : allPersonnel.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    <p className="text-muted-foreground">No employees found</p>
+                  <TableCell colSpan={7} className="text-center py-8">
+                    <p className="text-muted-foreground">No personnel found</p>
                   </TableCell>
                 </TableRow>
               ) : (
-                employees.map((employee) => (
-                <TableRow key={employee._id || employee.employeeID}>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{employee.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {employee.employeeID || employee._id}
+                allPersonnel.map((person) => (
+                  <TableRow key={person._id || person.employeeID}>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{person.name || person.fullName}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {person.employeeID || person._id}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Joined:{" "}
+                          {person.dateJoined || person.createdAt
+                            ? new Date(person.dateJoined || person.createdAt).toLocaleDateString()
+                            : "N/A"}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        Joined:{" "}
-                        {employee.dateJoined ? new Date(employee.dateJoined).toLocaleDateString() : 'N/A'}
+                    </TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        person.type === 'employee' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-purple-100 text-purple-800'
+                      }`}>
+                        {person.type === 'employee' ? 'Employee' : 'User'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{person.role || 'N/A'}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {person.department || person.branch || 'N/A'}
+                        </div>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{employee.role}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {employee.department}
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1 text-sm">
+                          <Mail className="h-3 w-3" />
+                          {person.email}
+                        </div>
+                        <div className="flex items-center gap-1 text-sm">
+                          <Phone className="h-3 w-3" />
+                          {person.phone || 'N/A'}
+                        </div>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1 text-sm">
-                        <Mail className="h-3 w-3" />
-                        {employee.email}
-                      </div>
-                      <div className="flex items-center gap-1 text-sm">
-                        <Phone className="h-3 w-3" />
-                        {employee.phone}
-                      </div>
-                    </div>
-                  </TableCell>
+                    </TableCell>
 
-                  <TableCell>
-                    <Select
-                      value={employee.status}
-                      onValueChange={(value) =>
-                        handleStatusChange(employee._id, value)
-                      }
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="on_leave">On Leave</SelectItem>
-                        <SelectItem value="suspended">Suspended</SelectItem>
-                        <SelectItem value="terminated">Terminated</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleEdit(employee)}
+                    <TableCell>
+                      <Select
+                        value={person.status || 'active'}
+                        onValueChange={(value) =>
+                          handleStatusChange(person._id, value, person.type)
+                        }
                       >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDelete(employee._id)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="on_leave">On Leave</SelectItem>
+                          <SelectItem value="suspended">Suspended</SelectItem>
+                          <SelectItem value="terminated">Terminated</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        {person.type === 'employee' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEdit(person)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDelete(person._id, person.type)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
@@ -548,19 +646,25 @@ function EmployeeManagement() {
               const deptEmployees = employees.filter(
                 (emp) => emp.department === dept
               );
-
+              const deptUsers = users.filter(
+                (user) => user.department === dept || user.branch === dept
+              );
+              const totalInDept = deptEmployees.length + deptUsers.length;
 
               return (
                 <div key={dept} className="p-4 border rounded-lg">
                   <h4 className="font-medium mb-2">{dept}</h4>
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
-                      <span>Employees:</span>
+                      <span>Total:</span>
                       <span className="font-medium">
-                        {deptEmployees.length}
+                        {totalInDept}
                       </span>
                     </div>
-
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Employees: {deptEmployees.length}</span>
+                      <span>Users: {deptUsers.length}</span>
+                    </div>
                   </div>
                 </div>
               );

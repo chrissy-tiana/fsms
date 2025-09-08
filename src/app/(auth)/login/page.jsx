@@ -20,8 +20,21 @@ function Login() {
     setError("");
     setIsSubmitting(true);
     try {
-      await login({ email, password });
-      router.push("/reports-analytics");
+      const { user } = await login({ email, password });
+      
+      // Check if user is an employee (not a manager)
+      const employeeRoles = [
+        "Pump Attendant",
+        "Cashier",
+        "Security Guard",
+        "Maintenance"
+      ];
+      
+      if (user && employeeRoles.includes(user.role)) {
+        router.push("/app/employee/fuel-sales");
+      } else {
+        router.push("/reports-analytics");
+      }
     } catch (err) {
       const message = err?.response?.data?.message || "Login failed";
       setError(message);
