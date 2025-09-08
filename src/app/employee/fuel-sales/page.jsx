@@ -170,19 +170,19 @@ function FuelSales() {
         setSaving(false);
         return;
       }
-      
+
       if (!formData.fuelType) {
         toast.error("Please select a fuel type");
         setSaving(false);
         return;
       }
-      
+
       if (!formData.openingReading || !formData.closingReading) {
         toast.error("Please enter both opening and closing readings");
         setSaving(false);
         return;
       }
-      
+
       if (!formData.pricePerLiter) {
         toast.error("Please enter price per liter");
         setSaving(false);
@@ -192,7 +192,7 @@ function FuelSales() {
       // Validate readings
       const openingReading = parseFloat(formData.openingReading);
       const closingReading = parseFloat(formData.closingReading);
-      
+
       if (closingReading <= openingReading) {
         toast.error("Closing reading must be greater than opening reading");
         setSaving(false);
@@ -212,7 +212,7 @@ function FuelSales() {
 
       const response = await createFuelSale(saleData);
       console.log("Sale response:", response);
-      
+
       if (response.success) {
         setSales((prev) => [response.data, ...prev]);
         toast.success("Fuel sale recorded successfully");
@@ -243,7 +243,11 @@ function FuelSales() {
       }
     } catch (error) {
       console.error("Error saving sale:", error);
-      toast.error(error.response?.data?.message || error.message || "Failed to record sale");
+      toast.error(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to record sale"
+      );
     } finally {
       setSaving(false);
     }
@@ -275,21 +279,38 @@ function FuelSales() {
   const loadCurrentUser = async () => {
     try {
       const userData = await getCurrentUser();
-      if (userData && userData.success) {
+      console.log("Current user data:", userData);
+
+      if (userData && userData.success && userData.data) {
         setCurrentUser(userData.data);
         // Update form data with current user's name
+        const userName =
+          userData.data.fullName ||
+          userData.data.name ||
+          userData.data.email ||
+          "Unknown User";
         setFormData((prev) => ({
           ...prev,
-          attendant:
-            userData.data.fullName || userData.data.name || "Unknown User",
+          attendant: userName,
         }));
+        toast.success(`Logged in as: ${userName}`);
+      } else {
+        console.warn("No user data available");
+        const fallbackName = "Current User";
+        setFormData((prev) => ({
+          ...prev,
+          attendant: fallbackName,
+        }));
+        toast.info("Using default attendant name");
       }
     } catch (error) {
       console.error("Error loading current user:", error);
+      const fallbackName = "Current User";
       setFormData((prev) => ({
         ...prev,
-        attendant: "Current User",
+        attendant: fallbackName,
       }));
+      toast.warning("Could not load user info, using default");
     }
   };
 
@@ -346,8 +367,8 @@ function FuelSales() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
           </CardHeader>
@@ -357,7 +378,7 @@ function FuelSales() {
             </div>
             <p className="text-xs text-muted-foreground">Total revenue today</p>
           </CardContent>
-        </Card>
+        </Card> */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Volume Sold</CardTitle>
@@ -591,15 +612,17 @@ function FuelSales() {
                   />
                 </div>
               </div>
-              
+
               {/* Form validation help text */}
               <div className="bg-blue-50 border border-blue-200 rounded p-3">
                 <p className="text-sm text-blue-800">
-                  <strong>Required fields (*):</strong> All fields marked with * must be completed before you can save the sale.
-                  Price and volume calculations will be done automatically when you enter the readings.
+                  <strong>Required fields (*):</strong> All fields marked with *
+                  must be completed before you can save the sale. Price and
+                  volume calculations will be done automatically when you enter
+                  the readings.
                 </p>
               </div>
-              
+
               <div className="flex gap-2 pt-4">
                 <Button
                   type="submit"
