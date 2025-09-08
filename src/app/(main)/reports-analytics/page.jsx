@@ -29,10 +29,17 @@ import {
 } from "lucide-react";
 import {
   getDailySalesReport,
+  getMonthlySalesReport,
   getInventoryReport,
   getFinancialSummaryReport,
   getDashboardOverview,
 } from "@/services/reports";
+import {
+  exportToCSV,
+  exportToExcel,
+  generatePDFReport,
+  generateQuickReport,
+} from "@/lib/exportUtils";
 
 function ReportsAndAnalytics() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -55,6 +62,18 @@ function ReportsAndAnalytics() {
     grossProfit: 0,
     netProfit: 0,
     profitMargin: 0,
+    incomeByCategory: {},
+    expensesByCategory: {},
+  });
+
+  const [allTimeFinancialData, setAllTimeFinancialData] = useState({
+    totalRevenue: 0,
+    totalExpenses: 0,
+    grossProfit: 0,
+    netProfit: 0,
+    profitMargin: 0,
+    monthlyTrends: [],
+    yearlyBreakdown: [],
     incomeByCategory: {},
     expensesByCategory: {},
   });
@@ -287,6 +306,119 @@ function ReportsAndAnalytics() {
     }
   };
 
+  const loadAllTimeFinancialData = async () => {
+    try {
+      // Get data for the last 2 years for comprehensive analysis
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setFullYear(startDate.getFullYear() - 2);
+
+      const response = await getFinancialSummaryReport(
+        startDate.toISOString().split('T')[0],
+        endDate.toISOString().split('T')[0]
+      );
+
+      if (response.success && response.data) {
+        const summary = response.data.summary;
+        const grossProfit = (summary.totalRevenue || 0) * 0.4;
+
+        // Generate monthly trends for the last 12 months
+        const monthlyTrends = [];
+        for (let i = 11; i >= 0; i--) {
+          const date = new Date();
+          date.setMonth(date.getMonth() - i);
+          const year = date.getFullYear();
+          const month = date.getMonth() + 1;
+          
+          try {
+            const monthlyResponse = await getMonthlySalesReport(year, month);
+            if (monthlyResponse.success && monthlyResponse.data) {
+              const monthlyData = monthlyResponse.data.summary || {};
+              monthlyTrends.push({
+                month: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+                revenue: monthlyData.totalSales || 0,
+                profit: (monthlyData.totalSales || 0) * 0.25,
+                transactions: monthlyData.totalTransactions || 0,
+              });
+            } else {
+              monthlyTrends.push({
+                month: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+                revenue: 0,
+                profit: 0,
+                transactions: 0,
+              });
+            }
+          } catch (error) {
+            monthlyTrends.push({
+              month: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+              revenue: 0,
+              profit: 0,
+              transactions: 0,
+            });
+          }
+        }
+
+        // Generate yearly breakdown
+        const currentYear = new Date().getFullYear();
+        const yearlyBreakdown = [];
+        
+        for (let year = currentYear - 1; year <= currentYear; year++) {
+          let yearlyRevenue = 0;
+          let yearlyTransactions = 0;
+          
+          for (let month = 1; month <= 12; month++) {
+            try {
+              const monthlyResponse = await getMonthlySalesReport(year, month);
+              if (monthlyResponse.success && monthlyResponse.data) {
+                const monthlyData = monthlyResponse.data.summary || {};
+                yearlyRevenue += monthlyData.totalSales || 0;
+                yearlyTransactions += monthlyData.totalTransactions || 0;
+              }
+            } catch (error) {
+              // Continue with zeros for failed requests
+            }
+          }
+          
+          yearlyBreakdown.push({
+            year,
+            revenue: yearlyRevenue,
+            profit: yearlyRevenue * 0.25,
+            transactions: yearlyTransactions,
+            avgMonthlyRevenue: yearlyRevenue / 12,
+          });
+        }
+
+        setAllTimeFinancialData({
+          totalRevenue: summary.totalRevenue || 0,
+          totalExpenses: summary.totalExpenses || 0,
+          grossProfit,
+          netProfit: summary.netIncome || 0,
+          profitMargin:
+            summary.totalRevenue > 0
+              ? ((summary.netIncome || 0) / summary.totalRevenue) * 100
+              : 0,
+          monthlyTrends,
+          yearlyBreakdown,
+          incomeByCategory: response.data.incomeByCategory || {},
+          expensesByCategory: response.data.expensesByCategory || {},
+        });
+      }
+    } catch (error) {
+      console.error("Error loading all-time financial data:", error);
+      setAllTimeFinancialData({
+        totalRevenue: 0,
+        totalExpenses: 0,
+        grossProfit: 0,
+        netProfit: 0,
+        profitMargin: 0,
+        monthlyTrends: [],
+        yearlyBreakdown: [],
+        incomeByCategory: {},
+        expensesByCategory: {},
+      });
+    }
+  };
+
   const loadTabData = async (tab) => {
     setLoading(true);
     try {
@@ -298,7 +430,7 @@ function ReportsAndAnalytics() {
           await loadInventoryData();
           break;
         case "financial":
-          await loadFinancialData();
+          await Promise.all([loadFinancialData(), loadAllTimeFinancialData()]);
           break;
         default:
           break;
@@ -310,12 +442,155 @@ function ReportsAndAnalytics() {
     }
   };
 
-  const generateReport = (reportType, format) => {
-    toast.info(`Generating ${reportType} report in ${format} format...`);
+  const generateReport = async (reportType, format) => {
+    toast.info(`Generating ${reportType} report...`);
+
+    try {
+      let data;
+
+      // Load fresh data for report generation
+      switch (reportType) {
+        case "Daily Sales":
+          // Load fresh sales data
+          const salesPromises = [];
+          for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            salesPromises.push(
+              getDailySalesReport(date.toISOString().split("T")[0])
+            );
+          }
+
+          const salesResults = await Promise.allSettled(salesPromises);
+          const processedSalesData = [];
+
+          salesResults.forEach((result, index) => {
+            const date = new Date();
+            date.setDate(date.getDate() - (6 - index));
+            const dateStr = date.toISOString().split("T")[0];
+
+            if (result.status === "fulfilled" && result.value.success) {
+              const resultData = result.value.data;
+              processedSalesData.push({
+                date: dateStr,
+                totalSales: resultData.summary.totalSales || 0,
+                petrol: resultData.salesByFuelType?.Petrol || 0,
+                diesel: resultData.salesByFuelType?.Diesel || 0,
+                premium: resultData.salesByFuelType?.Premium || 0,
+                transactions: resultData.summary.totalTransactions || 0,
+              });
+            } else {
+              processedSalesData.push({
+                date: dateStr,
+                totalSales: 0,
+                petrol: 0,
+                diesel: 0,
+                premium: 0,
+                transactions: 0,
+              });
+            }
+          });
+
+          data = processedSalesData;
+          break;
+
+        case "Inventory Report":
+          // Load fresh inventory data
+          const invResponse = await getInventoryReport();
+          if (invResponse.success && invResponse.data.inventory) {
+            data = invResponse.data.inventory.map((item) => ({
+              fuelType: item.fuelType,
+              openingStock:
+                item.openingStock ||
+                item.currentStock - (item.stockIn || 0) + (item.stockOut || 0),
+              stockIn: item.stockIn || 0,
+              stockOut: item.stockOut || 0,
+              closingStock: item.currentStock,
+              value: item.currentStock * (item.costPerLiter || 6.5),
+            }));
+          } else {
+            data = [];
+          }
+          break;
+
+        case "P&L Statement":
+        case "Profit & Loss":
+          // Load fresh financial data
+          const finResponse = await getFinancialSummaryReport(
+            dateRange.startDate,
+            dateRange.endDate
+          );
+
+          if (finResponse.success && finResponse.data) {
+            const summary = finResponse.data.summary;
+            const grossProfit = (summary.totalRevenue || 0) * 0.4;
+
+            data = {
+              totalRevenue: summary.totalRevenue || 0,
+              totalExpenses: summary.totalExpenses || 0,
+              grossProfit,
+              netProfit: summary.netIncome || 0,
+              profitMargin:
+                summary.totalRevenue > 0
+                  ? ((summary.netIncome || 0) / summary.totalRevenue) * 100
+                  : 0,
+              incomeByCategory: finResponse.data.incomeByCategory || {},
+              expensesByCategory: finResponse.data.expensesByCategory || {},
+            };
+          } else {
+            data = null;
+          }
+          break;
+
+        default:
+          toast.error("Unknown report type");
+          return;
+      }
+
+      // Check if data is still empty after loading
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        toast.error("No data available for this report");
+        return;
+      }
+
+      if (format === "PDF") {
+        generatePDFReport(
+          reportType === "Daily Sales"
+            ? "Daily Sales Report"
+            : reportType === "P&L Statement"
+            ? "Profit & Loss Statement"
+            : reportType,
+          data,
+          dateRange
+        );
+      } else {
+        generateQuickReport(reportType, format, data, dateRange);
+      }
+
+      toast.success(`${reportType} report generated successfully!`);
+    } catch (error) {
+      console.error("Error generating report:", error);
+      toast.error("Failed to generate report");
+    }
   };
 
   const exportData = (data, filename) => {
     toast.info(`Exporting ${filename}...`);
+
+    try {
+      const format = filename.endsWith(".xlsx") ? "excel" : "csv";
+
+      if (format === "excel") {
+        exportToExcel(data, filename.replace(".xlsx", ""));
+      } else {
+        exportToCSV(data, filename.replace(".csv", ""));
+      }
+
+      toast.success(`Data exported successfully!`);
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      toast.error("Failed to export data");
+    }
   };
 
   if (loading && activeTab === "overview") {
@@ -703,87 +978,303 @@ function ReportsAndAnalytics() {
               <span className="ml-2">Loading financial data...</span>
             </div>
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Profit & Loss Statement
-                  <Button
-                    size="sm"
-                    onClick={() => generateReport("Profit & Loss", "PDF")}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Generate PDF
-                  </Button>
-                </CardTitle>
-                <CardDescription>Financial performance summary</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <h4 className="font-medium text-green-600 mb-2">
-                        Revenue
-                      </h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span>Fuel Sales</span>
-                          <span>₵{financialData.totalRevenue.toFixed(2)}</span>
+            <>
+              {/* All-Time Financial Overview */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      All-Time Revenue
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">
+                      ₵{allTimeFinancialData.totalRevenue.toFixed(2)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Total earnings</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      All-Time Profit
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-blue-600">
+                      ₵{allTimeFinancialData.netProfit.toFixed(2)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {allTimeFinancialData.profitMargin.toFixed(1)}% margin
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      Monthly Average
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      ₵{allTimeFinancialData.monthlyTrends.length > 0 
+                        ? (allTimeFinancialData.totalRevenue / Math.max(allTimeFinancialData.monthlyTrends.length, 1)).toFixed(2)
+                        : "0.00"}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Revenue per month</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      Best Month
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-purple-600">
+                      ₵{allTimeFinancialData.monthlyTrends.length > 0 
+                        ? Math.max(...allTimeFinancialData.monthlyTrends.map(m => m.revenue)).toFixed(2)
+                        : "0.00"}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Peak performance</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Monthly Trends */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    Monthly Performance Trends
+                    <Button
+                      size="sm"
+                      onClick={() => exportData(allTimeFinancialData.monthlyTrends, "monthly_trends.xlsx")}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>Revenue and profit trends over the last 12 months</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Month</TableHead>
+                        <TableHead>Revenue</TableHead>
+                        <TableHead>Estimated Profit</TableHead>
+                        <TableHead>Transactions</TableHead>
+                        <TableHead>Avg/Transaction</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allTimeFinancialData.monthlyTrends.length > 0 ? (
+                        allTimeFinancialData.monthlyTrends.map((month, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">{month.month}</TableCell>
+                            <TableCell>₵{month.revenue.toFixed(2)}</TableCell>
+                            <TableCell className="text-green-600">₵{month.profit.toFixed(2)}</TableCell>
+                            <TableCell>{month.transactions}</TableCell>
+                            <TableCell>
+                              ₵{month.transactions > 0 ? (month.revenue / month.transactions).toFixed(2) : "0.00"}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                            No monthly trend data available
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              {/* Yearly Breakdown */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    Yearly Performance Analysis
+                    <Button
+                      size="sm"
+                      onClick={() => exportData(allTimeFinancialData.yearlyBreakdown, "yearly_analysis.xlsx")}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>Year-over-year performance comparison</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Year</TableHead>
+                        <TableHead>Total Revenue</TableHead>
+                        <TableHead>Estimated Profit</TableHead>
+                        <TableHead>Monthly Average</TableHead>
+                        <TableHead>Growth Rate</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allTimeFinancialData.yearlyBreakdown.length > 0 ? (
+                        allTimeFinancialData.yearlyBreakdown.map((year, index) => {
+                          const prevYear = index > 0 ? allTimeFinancialData.yearlyBreakdown[index - 1] : null;
+                          const growthRate = prevYear && prevYear.revenue > 0 
+                            ? ((year.revenue - prevYear.revenue) / prevYear.revenue * 100)
+                            : 0;
+                          
+                          return (
+                            <TableRow key={index}>
+                              <TableCell className="font-medium">{year.year}</TableCell>
+                              <TableCell>₵{year.revenue.toFixed(2)}</TableCell>
+                              <TableCell className="text-green-600">₵{year.profit.toFixed(2)}</TableCell>
+                              <TableCell>₵{year.avgMonthlyRevenue.toFixed(2)}</TableCell>
+                              <TableCell className={growthRate >= 0 ? "text-green-600" : "text-red-600"}>
+                                {growthRate >= 0 ? "+" : ""}{growthRate.toFixed(1)}%
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                            No yearly data available
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              {/* Current Period P&L Statement */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    Profit & Loss Statement - Selected Period
+                    <Button
+                      size="sm"
+                      onClick={() => generateReport("Profit & Loss", "PDF")}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Generate PDF
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>
+                    Financial performance for {new Date(dateRange.startDate).toLocaleDateString()} - {new Date(dateRange.endDate).toLocaleDateString()}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="font-medium text-green-600 mb-2">
+                          Revenue
+                        </h4>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span>Fuel Sales</span>
+                            <span>₵{financialData.totalRevenue.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-medium border-t pt-2">
+                            <span>Total Revenue</span>
+                            <span>₵{financialData.totalRevenue.toFixed(2)}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between font-medium border-t pt-2">
-                          <span>Total Revenue</span>
-                          <span>₵{financialData.totalRevenue.toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-red-600 mb-2">
+                          Expenses
+                        </h4>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span>Cost of Goods Sold</span>
+                            <span>
+                              ₵
+                              {(
+                                financialData.totalRevenue -
+                                financialData.grossProfit
+                              ).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Operating Expenses</span>
+                            <span>₵{financialData.totalExpenses.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-medium border-t pt-2">
+                            <span>Total Expenses</span>
+                            <span>₵{financialData.totalExpenses.toFixed(2)}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <div>
-                      <h4 className="font-medium text-red-600 mb-2">
-                        Expenses
-                      </h4>
+                    <div className="border-t pt-4">
                       <div className="space-y-2">
                         <div className="flex justify-between">
-                          <span>Cost of Goods Sold</span>
-                          <span>
-                            ₵
-                            {(
-                              financialData.totalRevenue -
-                              financialData.grossProfit
-                            ).toFixed(2)}
+                          <span>Gross Profit</span>
+                          <span className="font-medium">
+                            ₵{financialData.grossProfit.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-lg font-bold">
+                          <span>Net Profit</span>
+                          <span className="text-green-600">
+                            ₵{financialData.netProfit.toFixed(2)}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Operating Expenses</span>
-                          <span>₵{financialData.totalExpenses.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between font-medium border-t pt-2">
-                          <span>Total Expenses</span>
-                          <span>₵{financialData.totalExpenses.toFixed(2)}</span>
+                          <span>Profit Margin</span>
+                          <span>{financialData.profitMargin.toFixed(2)}%</span>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <div className="border-t pt-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span>Gross Profit</span>
-                        <span className="font-medium">
-                          ₵{financialData.grossProfit.toFixed(2)}
-                        </span>
+                </CardContent>
+              </Card>
+
+              {/* Income & Expense Categories */}
+              {(Object.keys(allTimeFinancialData.incomeByCategory).length > 0 || 
+                Object.keys(allTimeFinancialData.expensesByCategory).length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-green-600">Income by Category</CardTitle>
+                      <CardDescription>Revenue breakdown by source</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {Object.entries(allTimeFinancialData.incomeByCategory).map(([category, amount]) => (
+                          <div key={category} className="flex justify-between">
+                            <span className="capitalize">{category}</span>
+                            <span>₵{amount.toFixed(2)}</span>
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex justify-between text-lg font-bold">
-                        <span>Net Profit</span>
-                        <span className="text-green-600">
-                          ₵{financialData.netProfit.toFixed(2)}
-                        </span>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-red-600">Expenses by Category</CardTitle>
+                      <CardDescription>Cost breakdown by type</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {Object.entries(allTimeFinancialData.expensesByCategory).map(([category, amount]) => (
+                          <div key={category} className="flex justify-between">
+                            <span className="capitalize">{category}</span>
+                            <span>₵{amount.toFixed(2)}</span>
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex justify-between">
-                        <span>Profit Margin</span>
-                        <span>{financialData.profitMargin.toFixed(2)}%</span>
-                      </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 </div>
-              </CardContent>
-            </Card>
+              )}
+            </>
           )}
         </div>
       )}
