@@ -381,8 +381,8 @@ function ReportsAndAnalytics() {
       {activeTab === "overview" && (
         <div className="space-y-6">
           {/* Key Metrics from Backend Data */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
                   Total Revenue
@@ -416,7 +416,7 @@ function ReportsAndAnalytics() {
                   % margin
                 </p>
               </CardContent>
-            </Card>
+            </Card> */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">

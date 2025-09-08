@@ -158,15 +158,10 @@ function Signup() {
                     <SelectItem value="Station Manager">
                       Station Manager
                     </SelectItem>
-                    <SelectItem value="Supervisor">Supervisor</SelectItem>
                     <SelectItem value="Pump Attendant">
                       Pump Attendant
                     </SelectItem>
                     <SelectItem value="Cashier">Cashier</SelectItem>
-                    <SelectItem value="Security Guard">
-                      Security Guard
-                    </SelectItem>
-                    <SelectItem value="Maintenance">Maintenance</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -183,8 +178,6 @@ function Signup() {
                   <SelectContent>
                     <SelectItem value="Management">Management</SelectItem>
                     <SelectItem value="Operations">Operations</SelectItem>
-                    <SelectItem value="Security">Security</SelectItem>
-                    <SelectItem value="Maintenance">Maintenance</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

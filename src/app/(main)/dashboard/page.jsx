@@ -21,7 +21,8 @@ import {
   LayoutDashboard,
 } from "lucide-react";
 import { getDashboardOverview } from "@/services/reports";
-import { getEmployeeStats } from "@/services/employees";
+import { getEmployeeStats, getEmployees } from "@/services/employees";
+import { getUsers } from "@/services/users";
 import { getFuelSalesStats } from "@/services/fuelSales";
 import { getInventoryStats } from "@/services/inventory";
 import { getCurrentFuelPrices } from "@/services/fuelPrices";
@@ -49,6 +50,8 @@ function Dashboard() {
       const [
         dashboardOverview,
         employeeStats,
+        employeesData,
+        usersData,
         salesStats,
         inventoryStats,
         fuelPrices,
@@ -56,11 +59,26 @@ function Dashboard() {
       ] = await Promise.all([
         getDashboardOverview(),
         getEmployeeStats(),
+        getEmployees(),
+        getUsers(),
         getFuelSalesStats(),
         getInventoryStats(),
         getCurrentFuelPrices(),
         getFuelSales({ limit: 5 }),
       ]);
+
+      // Calculate combined employee and user counts
+      const employees = employeesData.success ? employeesData.data || [] : [];
+      const users = usersData.success ? usersData.data || [] : [];
+
+      const activeEmployees = employees.filter(
+        (emp) => emp.status === "active"
+      );
+      const activeUsers = users.filter(
+        (user) => user.status === "active" || !user.status
+      );
+      const totalPersonnel = employees.length + users.length;
+      const totalActive = activeEmployees.length + activeUsers.length;
 
       setStats({
         sales: {
@@ -69,8 +87,8 @@ function Dashboard() {
           transactions: salesStats.data?.totalTransactions || 0,
         },
         employees: {
-          total: employeeStats.data?.totalEmployees || 0,
-          active: employeeStats.data?.activeEmployees || 0,
+          total: totalPersonnel,
+          active: totalActive,
         },
         inventory: {
           lowStock: inventoryStats.data?.lowStockItems || 0,
@@ -165,14 +183,14 @@ function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Active Employees
+              Active Personnel
             </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.employees.active}</div>
             <p className="text-xs text-muted-foreground">
-              of {stats.employees.total} total
+              of {stats.employees.total} total (employees + users)
             </p>
           </CardContent>
         </Card>
@@ -336,7 +354,7 @@ function Dashboard() {
           <CardDescription>Common tasks and operations</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <a
               href="/fuel-sales"
               className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 transition-colors"

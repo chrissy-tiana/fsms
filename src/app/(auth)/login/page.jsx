@@ -21,17 +21,17 @@ function Login() {
     setIsSubmitting(true);
     try {
       const { user } = await login({ email, password });
-      
+
       // Check if user is an employee (not a manager)
       const employeeRoles = [
         "Pump Attendant",
         "Cashier",
         "Security Guard",
-        "Maintenance"
+        "Maintenance",
       ];
-      
+
       if (user && employeeRoles.includes(user.role)) {
-        router.push("/app/employee/fuel-sales");
+        router.push("/employee/fuel-sales");
       } else {
         router.push("/reports-analytics");
       }

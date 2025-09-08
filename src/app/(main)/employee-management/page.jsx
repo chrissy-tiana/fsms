@@ -37,6 +37,7 @@ import {
   Edit,
   Trash2,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import {
   getEmployees,
@@ -79,6 +80,14 @@ function EmployeeManagement() {
   ];
 
   const departments = ["Management", "Operations", "Security", "Maintenance"];
+
+  // Helper function to determine department for a person
+  const getDepartmentForPerson = (person) => {
+    if (person.department) return person.department;
+    if (person.branch) return person.branch;
+    if (person.type === "user") return "Operations"; // Default for users
+    return "N/A";
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -144,14 +153,15 @@ function EmployeeManagement() {
   };
 
   const handleDelete = async (personId, personType) => {
-    const confirmMessage = personType === 'employee' 
-      ? "Are you sure you want to delete this employee?" 
-      : "Are you sure you want to delete this user?";
-    
+    const confirmMessage =
+      personType === "employee"
+        ? "Are you sure you want to delete this employee?"
+        : "Are you sure you want to delete this user?";
+
     if (confirm(confirmMessage)) {
       try {
         let response;
-        if (personType === 'employee') {
+        if (personType === "employee") {
           response = await deleteEmployee(personId);
           if (response.success) {
             setEmployees((prev) => prev.filter((emp) => emp._id !== personId));
@@ -162,10 +172,16 @@ function EmployeeManagement() {
             setUsers((prev) => prev.filter((user) => user._id !== personId));
           }
         }
-        
+
         if (response.success) {
-          setAllPersonnel((prev) => prev.filter((person) => person._id !== personId));
-          toast.success(`${personType === 'employee' ? 'Employee' : 'User'} deleted successfully`);
+          setAllPersonnel((prev) =>
+            prev.filter((person) => person._id !== personId)
+          );
+          toast.success(
+            `${
+              personType === "employee" ? "Employee" : "User"
+            } deleted successfully`
+          );
         }
       } catch (error) {
         toast.error(
@@ -178,7 +194,7 @@ function EmployeeManagement() {
   const handleStatusChange = async (personId, newStatus, personType) => {
     try {
       let response;
-      if (personType === 'employee') {
+      if (personType === "employee") {
         response = await updateEmployeeStatus(personId, newStatus);
         if (response.success) {
           setEmployees((prev) =>
@@ -193,15 +209,21 @@ function EmployeeManagement() {
           );
         }
       }
-      
+
       if (response.success) {
         // Update allPersonnel list
         setAllPersonnel((prev) =>
-          prev.map((person) => 
-            person._id === personId ? { ...response.data, type: personType } : person
+          prev.map((person) =>
+            person._id === personId
+              ? { ...response.data, type: personType }
+              : person
           )
         );
-        toast.success(`${personType === 'employee' ? 'Employee' : 'User'} status updated successfully`);
+        toast.success(
+          `${
+            personType === "employee" ? "Employee" : "User"
+          } status updated successfully`
+        );
       }
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to update status");
@@ -215,23 +237,37 @@ function EmployeeManagement() {
 
   const loadAllData = async () => {
     setLoading(true);
-    await Promise.all([
-      loadEmployees(),
-      loadUsers(),
-      loadStats(),
-    ]);
-    setLoading(false);
+    try {
+      const [employeesData, usersData] = await Promise.all([
+        loadEmployees(),
+        loadUsers(),
+        loadStats(),
+      ]);
+
+      // Update combined personnel list with the actual loaded data
+      updateAllPersonnel(employeesData || employees, usersData || users);
+    } catch (error) {
+      console.error("Error loading data:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadEmployees = async () => {
     try {
       const response = await getEmployees();
       if (response.success) {
-        setEmployees(response.data);
-        updateAllPersonnel(response.data, users);
+        const employeesData = response.data || [];
+        setEmployees(employeesData);
+        return employeesData;
+      } else {
+        toast.error(response.message || "Failed to load employees");
+        return [];
       }
     } catch (error) {
+      console.error("Error loading employees:", error);
       toast.error("Failed to load employees");
+      return [];
     }
   };
 
@@ -239,20 +275,32 @@ function EmployeeManagement() {
     try {
       const response = await getUsers();
       if (response.success) {
-        setUsers(response.data);
-        updateAllPersonnel(employees, response.data);
+        const usersData = response.data || [];
+        setUsers(usersData);
+        return usersData;
+      } else {
+        toast.error(response.message || "Failed to load users");
+        return [];
       }
     } catch (error) {
+      console.error("Error loading users:", error);
       toast.error("Failed to load users");
+      return [];
     }
   };
 
   const updateAllPersonnel = (employeesList, usersList) => {
     // Combine employees and users, marking their type
     const combinedList = [
-      ...employeesList.map(emp => ({ ...emp, type: 'employee' })),
-      ...usersList.map(user => ({ ...user, type: 'user' }))
+      ...employeesList.map((emp) => ({ ...emp, type: "employee" })),
+      ...usersList.map((user) => ({ ...user, type: "user" })),
     ];
+    // Sort by name for better organization
+    combinedList.sort((a, b) => {
+      const nameA = (a.name || a.fullName || "").toLowerCase();
+      const nameB = (b.name || b.fullName || "").toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
     setAllPersonnel(combinedList);
   };
 
@@ -268,7 +316,9 @@ function EmployeeManagement() {
   };
 
   const activeEmployees = employees.filter((emp) => emp.status === "active");
-  const activeUsers = users.filter((user) => user.status === "active" || !user.status);
+  const activeUsers = users.filter(
+    (user) => user.status === "active" || !user.status
+  );
   const totalActive = activeEmployees.length + activeUsers.length;
 
   return (
@@ -283,13 +333,24 @@ function EmployeeManagement() {
             Manage staff profiles and roles
           </p>
         </div>
-        <Button
-          onClick={() => setShowEmployeeForm(true)}
-          className="bg-black text-white"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add Employee
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={loadAllData}
+            variant="outline"
+            disabled={loading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+          <Button
+            onClick={() => setShowEmployeeForm(true)}
+            className="bg-black text-white"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Employee
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -301,26 +362,26 @@ function EmployeeManagement() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {allPersonnel.length}
-            </div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-bold">{allPersonnel.length}</div>
+            {/* <p className="text-xs text-muted-foreground">
               {employees.length} employees, {users.length} users
-            </p>
+            </p> */}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Active Personnel</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Active Personnel
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
               {totalActive}
             </div>
-            <p className="text-xs text-muted-foreground">
+            {/* <p className="text-xs text-muted-foreground">
               {activeEmployees.length} employees, {activeUsers.length} users
-            </p>
+            </p> */}
           </CardContent>
         </Card>
       </div>
@@ -515,7 +576,6 @@ function EmployeeManagement() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
                 <TableHead>Role & Department</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Status</TableHead>
@@ -543,32 +603,41 @@ function EmployeeManagement() {
                   <TableRow key={person._id || person.employeeID}>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{person.name || person.fullName}</div>
+                        <div className="font-medium">
+                          {person.name || person.fullName}
+                        </div>
                         <div className="text-sm text-muted-foreground">
                           {person.employeeID || person._id}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           Joined:{" "}
                           {person.dateJoined || person.createdAt
-                            ? new Date(person.dateJoined || person.createdAt).toLocaleDateString()
+                            ? new Date(
+                                person.dateJoined || person.createdAt
+                              ).toLocaleDateString()
                             : "N/A"}
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        person.type === 'employee' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-purple-100 text-purple-800'
-                      }`}>
-                        {person.type === 'employee' ? 'Employee' : 'User'}
+                    {/* <TableCell>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          person.type === "employee"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-purple-100 text-purple-800"
+                        }`}
+                      >
+                        {person.type === "employee" ? "Employee" : "User"}
                       </span>
-                    </TableCell>
+                    </TableCell> */}
                     <TableCell>
                       <div>
-                        <div className="font-medium">{person.role || 'N/A'}</div>
+                        <div className="font-medium">
+                          {person.role ||
+                            (person.type === "user" ? "System User" : "N/A")}
+                        </div>
                         <div className="text-sm text-muted-foreground">
-                          {person.department || person.branch || 'N/A'}
+                          {getDepartmentForPerson(person)}
                         </div>
                       </div>
                     </TableCell>
@@ -580,14 +649,14 @@ function EmployeeManagement() {
                         </div>
                         <div className="flex items-center gap-1 text-sm">
                           <Phone className="h-3 w-3" />
-                          {person.phone || 'N/A'}
+                          {person.phone || "N/A"}
                         </div>
                       </div>
                     </TableCell>
 
                     <TableCell>
                       <Select
-                        value={person.status || 'active'}
+                        value={person.status || "active"}
                         onValueChange={(value) =>
                           handleStatusChange(person._id, value, person.type)
                         }
@@ -605,7 +674,7 @@ function EmployeeManagement() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        {person.type === 'employee' && (
+                        {person.type === "employee" && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -647,7 +716,10 @@ function EmployeeManagement() {
                 (emp) => emp.department === dept
               );
               const deptUsers = users.filter(
-                (user) => user.department === dept || user.branch === dept
+                (user) =>
+                  user.department === dept ||
+                  user.branch === dept ||
+                  (!user.department && !user.branch && dept === "Operations")
               );
               const totalInDept = deptEmployees.length + deptUsers.length;
 
@@ -657,9 +729,7 @@ function EmployeeManagement() {
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span>Total:</span>
-                      <span className="font-medium">
-                        {totalInDept}
-                      </span>
+                      <span className="font-medium">{totalInDept}</span>
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Employees: {deptEmployees.length}</span>
