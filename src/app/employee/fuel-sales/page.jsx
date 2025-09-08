@@ -164,14 +164,55 @@ function FuelSales() {
     setSaving(true);
 
     try {
+      // Validate required fields
+      if (!formData.pumpNumber) {
+        toast.error("Please select a pump number");
+        setSaving(false);
+        return;
+      }
+      
+      if (!formData.fuelType) {
+        toast.error("Please select a fuel type");
+        setSaving(false);
+        return;
+      }
+      
+      if (!formData.openingReading || !formData.closingReading) {
+        toast.error("Please enter both opening and closing readings");
+        setSaving(false);
+        return;
+      }
+      
+      if (!formData.pricePerLiter) {
+        toast.error("Please enter price per liter");
+        setSaving(false);
+        return;
+      }
+
+      // Validate readings
+      const openingReading = parseFloat(formData.openingReading);
+      const closingReading = parseFloat(formData.closingReading);
+      
+      if (closingReading <= openingReading) {
+        toast.error("Closing reading must be greater than opening reading");
+        setSaving(false);
+        return;
+      }
+
       const saleData = {
         ...formData,
-        openingReading: parseFloat(formData.openingReading),
-        closingReading: parseFloat(formData.closingReading),
+        openingReading,
+        closingReading,
         pricePerLiter: parseFloat(formData.pricePerLiter),
+        totalVolume: parseFloat(formData.totalVolume),
+        totalAmount: parseFloat(formData.totalAmount),
       };
 
+      console.log("Submitting sale data:", saleData);
+
       const response = await createFuelSale(saleData);
+      console.log("Sale response:", response);
+      
       if (response.success) {
         setSales((prev) => [response.data, ...prev]);
         toast.success("Fuel sale recorded successfully");
@@ -195,10 +236,14 @@ function FuelSales() {
         setShowForm(false);
 
         // Refresh stats
-        loadStats();
+        await loadStats();
+        await loadSales();
+      } else {
+        toast.error(response.message || "Failed to record sale");
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to record sale");
+      console.error("Error saving sale:", error);
+      toast.error(error.response?.data?.message || error.message || "Failed to record sale");
     } finally {
       setSaving(false);
     }
@@ -280,7 +325,7 @@ function FuelSales() {
   const totalTransactions = stats.totalTransactions || sales.length;
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 w-[800px] mx-auto">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -363,7 +408,7 @@ function FuelSales() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Pump Number</label>
+                  <label className="text-sm font-medium">Pump Number *</label>
                   <Select
                     value={formData.pumpNumber}
                     onValueChange={(value) =>
@@ -382,7 +427,7 @@ function FuelSales() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Fuel Type</label>
+                  <label className="text-sm font-medium">Fuel Type *</label>
                   <Select
                     value={formData.fuelType}
                     onValueChange={(value) =>
@@ -453,7 +498,7 @@ function FuelSales() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
-                    Opening Reading (L)
+                    Opening Reading (L) *
                   </label>
                   <Input
                     type="number"
@@ -468,7 +513,7 @@ function FuelSales() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
-                    Closing Reading (L)
+                    Closing Reading (L) *
                   </label>
                   <Input
                     type="number"
@@ -483,7 +528,7 @@ function FuelSales() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
-                    Price per Liter (₵)
+                    Price per Liter (₵) *
                     {formData.fuelType && fuelPrices[formData.fuelType] && (
                       <span className="text-xs text-green-600 ml-2">
                         (Auto-filled from current prices)
@@ -546,16 +591,33 @@ function FuelSales() {
                   />
                 </div>
               </div>
+              
+              {/* Form validation help text */}
+              <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Required fields (*):</strong> All fields marked with * must be completed before you can save the sale.
+                  Price and volume calculations will be done automatically when you enter the readings.
+                </p>
+              </div>
+              
               <div className="flex gap-2 pt-4">
                 <Button
                   type="submit"
                   className="bg-black text-white"
-                  disabled={saving}
+                  disabled={
+                    saving ||
+                    !formData.pumpNumber ||
+                    !formData.fuelType ||
+                    !formData.openingReading ||
+                    !formData.closingReading ||
+                    !formData.pricePerLiter ||
+                    !formData.attendant
+                  }
                 >
                   {saving ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : null}
-                  Save Sale
+                  {saving ? "Saving..." : "Save Sale"}
                 </Button>
                 <Button
                   type="button"
